@@ -42,6 +42,10 @@ const userSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    semester: {
+      type: Number,
+      default: null,
+    },
     profileImage: {
       type: String,
       default: null,

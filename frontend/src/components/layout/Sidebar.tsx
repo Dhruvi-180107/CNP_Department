@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 
 export const NAVIGATION = [
   { id: 'dashboard',     label: 'Dashboard',         icon: '📊', path: '/dashboard',         roles: ['student', 'faculty_coordinator', 'faculty_mentor', 'club_admin', 'project_admin'] },
-  { id: 'clubs',         label: 'Clubs',             icon: '🏛', path: '/clubs',             roles: ['student', 'faculty_coordinator', 'faculty_mentor', 'club_admin', 'project_admin'] },
+  { id: 'clubs',         label: 'Clubs',             icon: '🏛', path: '/clubs',             roles: ['student', 'faculty_coordinator', 'club_admin', 'project_admin'] },
   { id: 'projects',      label: 'Projects',          icon: '📋', path: '/projects',          roles: ['student', 'faculty_coordinator', 'faculty_mentor', 'club_admin', 'project_admin'] },
   { id: 'events',        label: 'Events',            icon: '📅', path: '/events',            roles: ['student', 'faculty_coordinator', 'faculty_mentor', 'club_admin', 'project_admin'] },
   { id: 'notifications', label: 'Notifications',     icon: '🔔', path: '/notifications',     roles: ['student', 'faculty_coordinator', 'faculty_mentor', 'club_admin', 'project_admin'] },
@@ -41,14 +41,14 @@ export function Sidebar() {
           {user.profileImage ? (
             <img src={user.profileImage} alt="Profile" className="user-avatar" />
           ) : (
-            <div className="user-avatar-placeholder"></div>
+            <div className="user-avatar-placeholder">{user.name.charAt(0)}</div>
           )}
           <div className="user-meta">
             <span className="user-name" title={user.name}>{user.name}</span>
-            <span className="user-role">{user.role}</span>
+            <span className="user-role">{user.role.replace('_', ' ')}</span>
           </div>
         </div>
-        <button className="btn btn-sm" onClick={logout} style={{ width: '100%' }}>Sign Out</button>
+        <button className="btn btn-outline btn-sm" onClick={logout} style={{ width: '100%' }}>Sign Out</button>
       </div>
     </nav>
   );

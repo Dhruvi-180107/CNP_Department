@@ -84,7 +84,7 @@ projectMentorRouter.post(
         isPrimary,
       });
 
-      await assignment.populate('mentorId', 'name email role');
+      await assignment.populate('mentorId', 'name email role department semester');
       await assignment.populate('projectId', 'name status');
 
       // Notify the Faculty Mentor about their assignment
@@ -134,7 +134,7 @@ projectMentorRouter.get('/:projectId/mentors', requireAuth, async (req, res) => 
     }
 
     const mentors = await ProjectMentor.find({ projectId })
-      .populate('mentorId', 'name email role') // Safe fields — no passwords
+      .populate('mentorId', 'name email role department semester') // Safe fields — no passwords
       .sort({ isPrimary: -1, assignedAt: 1 }); // Primary first, then by assignment order
 
     res.status(200).json({
@@ -190,7 +190,7 @@ projectMentorRouter.patch(
       assignment.isPrimary = true;
       await assignment.save();
 
-      await assignment.populate('mentorId', 'name email role');
+      await assignment.populate('mentorId', 'name email role department semester');
       await assignment.populate('projectId', 'name status');
 
       res.status(200).json({
@@ -255,7 +255,7 @@ projectMentorRouter.delete(
           nextMentor.isPrimary = true;
           await nextMentor.save();
 
-          await nextMentor.populate('mentorId', 'name email role');
+          await nextMentor.populate('mentorId', 'name email role department semester');
 
           return res.status(200).json({
             success: true,

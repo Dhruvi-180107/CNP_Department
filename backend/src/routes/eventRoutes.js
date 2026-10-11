@@ -32,6 +32,8 @@ import User  from '../models/User.js';
 import Event from '../models/Event.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireAnyRole } from '../middleware/requireRole.js';
+import { uploadMixed, getBase64DataURI, handleUploadError } from '../middleware/upload.js';
+import { uploadRaw, deleteAsset } from '../services/cloudinaryService.js';
 
 const router = express.Router();
 
@@ -99,9 +101,11 @@ router.post(
   '/',
   requireAuth,
   requireAnyRole('faculty_coordinator', 'club_admin'),
+  uploadMixed.single('relatedDocument'),
+  handleUploadError,
   async (req, res) => {
     try {
-      const { title, description, clubId, eventDate, location } = req.body;
+      const { title, description, clubId, eventDate, location, eventLink, eventLinkName, relatedDocumentName } = req.body;
       const actingUser = req.user; // SECURITY: JWT-derived
 
       // ── Validate required fields ───────────────────────────────────────────
@@ -146,6 +150,22 @@ router.post(
         }
       }
 
+      // ── Process optional file upload ───────────────────────────────────────
+      let relatedDocument = undefined;
+      if (req.file) {
+        const fileUri = getBase64DataURI(req.file);
+        const uploadResult = await uploadRaw(fileUri, {
+          folder: 'cnp/events',
+          originalName: req.file.originalname,
+          mimeType: req.file.mimetype,
+        });
+        relatedDocument = {
+          url: uploadResult.secure_url,
+          publicId: uploadResult.public_id,
+          originalName: req.file.originalname,
+        };
+      }
+
       // ── Create event — createdBy from JWT ──────────────────────────────────
       const event = await Event.create({
         title:       title.trim(),
@@ -153,11 +173,15 @@ router.post(
         clubId,
         eventDate:   parsedDate,
         location:    location.trim(),
+        eventLink:   eventLink ? eventLink.trim() : '',
+        eventLinkName: eventLinkName ? eventLinkName.trim() : '',
+        relatedDocumentName: relatedDocumentName ? relatedDocumentName.trim() : '',
+        relatedDocument,
         createdBy:   actingUser.userId, // SECURITY: from JWT
       });
 
       await event.populate('clubId', 'name description');
-      await event.populate('createdBy', 'name email role');
+      await event.populate('createdBy', 'name email role department semester');
 
       return res.status(201).json({
         success: true,
@@ -183,7 +207,7 @@ router.get('/upcoming', requireAuth, async (_req, res) => {
 
     const events = await Event.find({ eventDate: { $gte: now } })
       .populate('clubId', 'name description facultyCoordinatorId')
-      .populate('createdBy', 'name email role')
+      .populate('createdBy', 'name email role department semester')
       .sort({ eventDate: 1 }); // Soonest first
 
     return res.status(200).json({
@@ -206,7 +230,7 @@ router.get('/', requireAuth, async (_req, res) => {
   try {
     const events = await Event.find()
       .populate('clubId', 'name description facultyCoordinatorId')
-      .populate('createdBy', 'name email role')
+      .populate('createdBy', 'name email role department semester')
       .sort({ eventDate: -1 });
 
     return res.status(200).json({
@@ -234,7 +258,7 @@ router.get('/:eventId', requireAuth, async (req, res) => {
 
     const event = await Event.findById(eventId)
       .populate('clubId', 'name description facultyCoordinatorId logo')
-      .populate('createdBy', 'name email role');
+      .populate('createdBy', 'name email role department semester');
 
     if (!event) {
       return res.status(404).json({ success: false, message: 'Event not found' });
@@ -256,10 +280,12 @@ router.put(
   '/:eventId',
   requireAuth,
   requireAnyRole('faculty_coordinator', 'club_admin'),
+  uploadMixed.single('relatedDocument'),
+  handleUploadError,
   async (req, res) => {
     try {
       const { eventId } = req.params;
-      const { title, description, eventDate, location, clubId } = req.body;
+      const { title, description, eventDate, location, clubId, eventLink, eventLinkName, relatedDocumentName, removeDocument } = req.body;
       const actingUser = req.user; // SECURITY: JWT-derived
 
       // ── Validate IDs ───────────────────────────────────────────────────────
@@ -318,10 +344,53 @@ router.put(
         }
         event.eventDate = parsed;
       }
+      if (eventLink !== undefined) {
+        event.eventLink = eventLink.trim();
+      }
+      if (eventLinkName !== undefined) {
+        event.eventLinkName = eventLinkName.trim();
+      }
+      if (relatedDocumentName !== undefined) {
+        event.relatedDocumentName = relatedDocumentName.trim();
+      }
+
+      // ── Process file upload or deletion ───────────────────────────────────
+      if (req.file) {
+        // Upload new file
+        const fileUri = getBase64DataURI(req.file);
+        const uploadResult = await uploadRaw(fileUri, {
+          folder: 'cnp/events',
+          originalName: req.file.originalname,
+          mimeType: req.file.mimetype,
+        });
+
+        // Delete old file if it exists
+        if (event.relatedDocument && event.relatedDocument.publicId) {
+          try {
+            await deleteAsset(event.relatedDocument.publicId, 'raw');
+          } catch (err) {
+            console.error('Failed to delete old relatedDocument from Cloudinary', err);
+          }
+        }
+
+        event.relatedDocument = {
+          url: uploadResult.secure_url,
+          publicId: uploadResult.public_id,
+          originalName: req.file.originalname,
+        };
+      } else if (removeDocument === 'true' && event.relatedDocument && event.relatedDocument.publicId) {
+        // Remove document explicitly
+        try {
+          await deleteAsset(event.relatedDocument.publicId, 'raw');
+        } catch (err) {
+          console.error('Failed to delete relatedDocument from Cloudinary', err);
+        }
+        event.relatedDocument = undefined;
+      }
 
       await event.save();
       await event.populate('clubId', 'name description');
-      await event.populate('createdBy', 'name email role');
+      await event.populate('createdBy', 'name email role department semester');
 
       return res.status(200).json({
         success: true,
@@ -366,6 +435,15 @@ router.delete(
         return res.status(403).json({ success: false, message: access.reason });
       }
 
+      // Delete Cloudinary asset if it exists
+      if (event.relatedDocument && event.relatedDocument.publicId) {
+        try {
+          await deleteAsset(event.relatedDocument.publicId, 'raw');
+        } catch (err) {
+          console.error('Failed to delete relatedDocument from Cloudinary', err);
+        }
+      }
+
       await Event.findByIdAndDelete(eventId);
 
       return res.status(200).json({
@@ -400,7 +478,7 @@ clubEventsRouter.get('/:clubId/events', requireAuth, async (req, res) => {
     }
 
     const events = await Event.find({ clubId })
-      .populate('createdBy', 'name email role')
+      .populate('createdBy', 'name email role department semester')
       .sort({ eventDate: 1 });
 
     return res.status(200).json({

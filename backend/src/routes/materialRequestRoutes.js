@@ -81,7 +81,7 @@ router.post('/', requireAuth, requireAnyRole('student'), async (req, res) => {
       status: 'pending',
     });
 
-    await request.populate('requestedBy', 'name email role');
+    await request.populate('requestedBy', 'name email role department semester');
     await request.populate('projectId', 'name status');
     await request.populate('inventoryItemId', 'name category availableQuantity');
 
@@ -104,10 +104,10 @@ router.post('/', requireAuth, requireAnyRole('student'), async (req, res) => {
 router.get('/', requireAuth, requireRole('project_admin'), async (_req, res) => {
   try {
     const requests = await MaterialRequest.find()
-      .populate('requestedBy', 'name email role')
+      .populate('requestedBy', 'name email role department semester')
       .populate('projectId', 'name status')
       .populate('inventoryItemId', 'name category availableQuantity')
-      .populate('reviewedBy', 'name email role')
+      .populate('reviewedBy', 'name email role department semester')
       .sort({ createdAt: -1 });
 
     res.status(200).json({ success: true, count: requests.length, data: requests });
@@ -155,10 +155,10 @@ router.get('/project/:projectId', requireAuth, async (req, res) => {
     }
 
     const requests = await MaterialRequest.find({ projectId })
-      .populate('requestedBy', 'name email role')
+      .populate('requestedBy', 'name email role department semester')
       .populate('projectId', 'name status')
       .populate('inventoryItemId', 'name category availableQuantity')
-      .populate('reviewedBy', 'name email role')
+      .populate('reviewedBy', 'name email role department semester')
       .sort({ createdAt: -1 });
 
     res.status(200).json({ success: true, count: requests.length, data: requests });
@@ -259,7 +259,7 @@ router.patch('/:requestId/approve', requireAuth, requireRole('project_admin'), a
     });
 
     // Populate for response
-    await request.populate('requestedBy', 'name email role');
+    await request.populate('requestedBy', 'name email role department semester');
     await request.populate('projectId', 'name status');
     await request.populate('inventoryItemId', 'name category availableQuantity');
 
@@ -328,10 +328,10 @@ router.patch('/:requestId/reject', requireAuth, requireRole('project_admin'), as
     request.reviewedAt = new Date();
     await request.save();
 
-    await request.populate('requestedBy', 'name email role');
+    await request.populate('requestedBy', 'name email role department semester');
     await request.populate('projectId', 'name status');
     await request.populate('inventoryItemId', 'name category');
-    await request.populate('reviewedBy', 'name email role');
+    await request.populate('reviewedBy', 'name email role department semester');
 
     // Notify the Team Leader about the rejection (inventory unchanged)
     const rejectedProject = await Project.findById(request.projectId).select('name teamLeaderId');

@@ -18,7 +18,7 @@ import { requireAnyRole } from '../middleware/requireRole.js';
 async function getPrimaryMentor(projectId) {
   // Try to find the explicitly marked primary mentor first
   const primary = await ProjectMentor.findOne({ projectId, isPrimary: true })
-    .populate('mentorId', 'name email role');
+    .populate('mentorId', 'name email role department semester');
 
   if (primary) {
     return primary.mentorId; // Populated User document
@@ -26,7 +26,7 @@ async function getPrimaryMentor(projectId) {
 
   // Fallback: return the earliest-assigned mentor if none is marked primary
   const earliest = await ProjectMentor.findOne({ projectId })
-    .populate('mentorId', 'name email role')
+    .populate('mentorId', 'name email role department semester')
     .sort({ assignedAt: 1 });
 
   return earliest ? earliest.mentorId : null;
@@ -100,9 +100,9 @@ clubJoinRouter.post('/:clubId/join', requireAuth, requireAnyRole('student'), asy
       status: 'pending',
     });
 
-    await joinRequest.populate('studentId', 'name email role');
+    await joinRequest.populate('studentId', 'name email role department semester');
     await joinRequest.populate('clubId', 'name description');
-    await joinRequest.populate('reviewerId', 'name email role');
+    await joinRequest.populate('reviewerId', 'name email role department semester');
 
     // Notify Faculty Coordinator about the new club join request
     createNotification({
@@ -197,9 +197,9 @@ projectJoinRouter.post('/:projectId/join', requireAuth, requireAnyRole('student'
       status: 'pending',
     });
 
-    await joinRequest.populate('studentId', 'name email role');
+    await joinRequest.populate('studentId', 'name email role department semester');
     await joinRequest.populate('projectId', 'name description status');
-    await joinRequest.populate('reviewerId', 'name email role');
+    await joinRequest.populate('reviewerId', 'name email role department semester');
 
     // Notify the primary Faculty Mentor about the new project join request
     createNotification({
@@ -234,6 +234,56 @@ projectJoinRouter.post('/:projectId/join', requireAuth, requireAnyRole('student'
 // ══════════════════════════════════════════════════════════════════════════════
 const joinRequestRouter = express.Router();
 
+// ── GET /api/join-requests/club/all ──────────────────────────────────────────
+// Fetch club join requests across all clubs. Only for club_admin.
+joinRequestRouter.get(
+  '/club/all',
+  requireAuth,
+  requireAnyRole('club_admin'),
+  async (req, res) => {
+    try {
+      const requests = await JoinRequest.find({ requestType: 'club' })
+        .populate('studentId', 'name email role department semester')
+        .populate('clubId', 'name description')
+        .populate('reviewerId', 'name email role department semester')
+        .sort({ createdAt: -1 });
+
+      res.status(200).json({
+        success: true,
+        count: requests.length,
+        data: requests,
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+);
+
+// ── GET /api/join-requests/project/all ───────────────────────────────────────
+// Fetch project join requests across all projects. Only for project_admin.
+joinRequestRouter.get(
+  '/project/all',
+  requireAuth,
+  requireAnyRole('project_admin'),
+  async (req, res) => {
+    try {
+      const requests = await JoinRequest.find({ requestType: 'project' })
+        .populate('studentId', 'name email role department semester')
+        .populate('projectId', 'name description status')
+        .populate('reviewerId', 'name email role department semester')
+        .sort({ createdAt: -1 });
+
+      res.status(200).json({
+        success: true,
+        count: requests.length,
+        data: requests,
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+);
+
 // ── GET /api/join-requests/reviewer ──────────────────────────────────────────
 // SECURITY: reviewer identity comes from req.user.userId — never from URL param.
 // Changed from /reviewer/:reviewerId to /reviewer (self-service).
@@ -247,7 +297,7 @@ joinRequestRouter.get(
 
       // Fetch all pending requests where this user is the reviewer
       const requests = await JoinRequest.find({ reviewerId, status: 'pending' })
-        .populate('studentId', 'name email role')
+        .populate('studentId', 'name email role department semester')
         .populate('clubId', 'name description')
         .populate('projectId', 'name description status')
         .sort({ createdAt: -1 });
@@ -283,7 +333,7 @@ joinRequestRouter.get(
       const requests = await JoinRequest.find({ studentId })
         .populate('clubId', 'name description')
         .populate('projectId', 'name description status')
-        .populate('reviewerId', 'name email role')
+        .populate('reviewerId', 'name email role department semester')
         .sort({ createdAt: -1 });
 
       res.status(200).json({
@@ -391,7 +441,7 @@ joinRequestRouter.patch(
         joinRequest.status = 'approved';
         await joinRequest.save();
 
-        await membership.populate('studentId', 'name email role');
+        await membership.populate('studentId', 'name email role department semester');
         await membership.populate('clubId', 'name');
 
         // Notify the student that their club join request was approved
@@ -462,7 +512,7 @@ joinRequestRouter.patch(
         joinRequest.status = 'approved';
         await joinRequest.save();
 
-        await membership.populate('studentId', 'name email role');
+        await membership.populate('studentId', 'name email role department semester');
         await membership.populate('projectId', 'name status');
 
         // Notify the student that their project join request was approved

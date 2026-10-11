@@ -1,13 +1,15 @@
-export const API_URL = 'http://localhost:5000/api';
+export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export function getStoredToken(): string | null {
   return localStorage.getItem('cnp_auth_token');
 }
 
 export async function api<T>(method: string, endpoint: string, body?: any): Promise<T> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
+  const headers: Record<string, string> = {};
+
+  if (!(body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   const token = getStoredToken();
   if (token) {
@@ -17,7 +19,7 @@ export async function api<T>(method: string, endpoint: string, body?: any): Prom
   const response = await fetch(`${API_URL}${endpoint}`, {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body: body ? (body instanceof FormData ? body : JSON.stringify(body)) : undefined,
   });
 
   let data;

@@ -30,7 +30,7 @@ router.get('/', requireAuth, requireRole('project_admin'), async (_req, res) => 
     const allocations = await InventoryAllocation.find()
       .populate('inventoryItemId', 'name category totalQuantity availableQuantity')
       .populate('projectId', 'name status')
-      .populate('allocatedBy', 'name email role')
+      .populate('allocatedBy', 'name email role department semester')
       .populate('materialRequestId', 'quantity reason createdAt')
       .sort({ allocatedAt: -1 });
 
@@ -52,7 +52,7 @@ router.get('/project/:projectId', requireAuth, requireRole('project_admin'), asy
 
     const allocations = await InventoryAllocation.find({ projectId })
       .populate('inventoryItemId', 'name category')
-      .populate('allocatedBy', 'name email role')
+      .populate('allocatedBy', 'name email role department semester')
       .sort({ allocatedAt: -1 });
 
     res.status(200).json({
@@ -81,7 +81,7 @@ router.get('/inventory/:itemId', requireAuth, requireRole('project_admin'), asyn
 
     const allocations = await InventoryAllocation.find({ inventoryItemId: itemId })
       .populate('projectId', 'name status')
-      .populate('allocatedBy', 'name email role')
+      .populate('allocatedBy', 'name email role department semester')
       .sort({ allocatedAt: -1 });
 
     res.status(200).json({

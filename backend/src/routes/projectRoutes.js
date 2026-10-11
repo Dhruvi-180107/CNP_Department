@@ -80,7 +80,7 @@ router.post('/', requireAuth, requireRole('project_admin'), async (req, res) => 
       createdBy,
     });
 
-    await project.populate('createdBy', 'name email role');
+    await project.populate('createdBy', 'name email role profileImage department semester');
 
     res.status(201).json({
       success: true,
@@ -97,7 +97,7 @@ router.post('/', requireAuth, requireRole('project_admin'), async (req, res) => 
 router.get('/', requireAuth, async (_req, res) => {
   try {
     const projects = await Project.find()
-      .populate('createdBy', 'name email role')
+      .populate('createdBy', 'name email role profileImage department semester')
       .sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -118,7 +118,7 @@ router.get('/:projectId', requireAuth, async (req, res) => {
 
     const project = await Project.findById(projectId).populate(
       'createdBy',
-      'name email role'
+      'name email role department semester'
     );
 
     if (!project) {
@@ -134,6 +134,46 @@ router.get('/:projectId', requireAuth, async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
+// ── PATCH /api/projects/:projectId ────────────────────────────────────────────
+// Update project details (name, description).
+// Only project_admin can update details.
+router.patch(
+  '/:projectId',
+  requireAuth,
+  requireRole('project_admin'),
+  async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const { name, description } = req.body;
+
+      const updateData = {};
+      if (name !== undefined) updateData.name = name;
+      if (description !== undefined) updateData.description = description;
+
+      const project = await Project.findByIdAndUpdate(
+        projectId,
+        { $set: updateData },
+        { new: true, runValidators: true }
+      ).populate('createdBy', 'name email role profileImage department semester');
+
+      if (!project) {
+        return res.status(404).json({ success: false, message: 'Project not found' });
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'Project details updated successfully',
+        data: project,
+      });
+    } catch (error) {
+      if (error.name === 'CastError') {
+        return res.status(400).json({ success: false, message: 'Invalid project ID format' });
+      }
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+);
 
 // ── PATCH /api/projects/:projectId/status ─────────────────────────────────────
 // Update project status only.
@@ -162,7 +202,7 @@ router.patch(
         projectId,
         { status },
         { new: true, runValidators: true }
-      ).populate('createdBy', 'name email role');
+      ).populate('createdBy', 'name email role profileImage department semester');
 
       if (!project) {
         return res.status(404).json({ success: false, message: 'Project not found' });
@@ -213,7 +253,7 @@ router.post(
 
       const membership = await ProjectMembership.create({ studentId, projectId });
 
-      await membership.populate('studentId', 'name email role');
+      await membership.populate('studentId', 'name email role profileImage department semester');
       await membership.populate('projectId', 'name status');
 
       res.status(201).json({
@@ -237,6 +277,47 @@ router.post(
   }
 );
 
+// ── DELETE /api/projects/:projectId/members/:studentId ────────────────────────
+// Remove a student from a project.
+// Only project_admin can remove members.
+router.delete(
+  '/:projectId/members/:studentId',
+  requireAuth,
+  requireRole('project_admin'),
+  async (req, res) => {
+    try {
+      const { projectId, studentId } = req.params;
+
+      const project = await Project.findById(projectId);
+      if (!project) {
+        return res.status(404).json({ success: false, message: 'Project not found' });
+      }
+
+      if (project.teamLeaderId && project.teamLeaderId.toString() === studentId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot remove the current Team Leader. Please assign a new Team Leader first.',
+        });
+      }
+
+      const membership = await ProjectMembership.findOneAndDelete({ projectId, studentId });
+      if (!membership) {
+        return res.status(404).json({ success: false, message: 'Membership not found' });
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'Student removed from project successfully',
+      });
+    } catch (error) {
+      if (error.name === 'CastError') {
+        return res.status(400).json({ success: false, message: 'Invalid ID format' });
+      }
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+);
+
 // ── GET /api/projects/:projectId/members ──────────────────────────────────────
 // Return all students in a project — readable by any authenticated user.
 router.get('/:projectId/members', requireAuth, async (req, res) => {
@@ -249,7 +330,7 @@ router.get('/:projectId/members', requireAuth, async (req, res) => {
     }
 
     const members = await ProjectMembership.find({ projectId })
-      .populate('studentId', 'name email role') // Safe fields only
+      .populate('studentId', 'name email role profileImage department semester') // Safe fields only
       .sort({ joinedAt: 1 });
 
     res.status(200).json({

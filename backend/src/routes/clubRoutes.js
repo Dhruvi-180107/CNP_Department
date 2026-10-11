@@ -1,6 +1,7 @@
 import express from 'express';
 import Club from '../models/Club.js';
 import ClubMembership from '../models/ClubMembership.js';
+import User from '../models/User.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireAnyRole } from '../middleware/requireRole.js';
 import { uploadImages, getBase64DataURI, handleUploadError } from '../middleware/upload.js';
@@ -63,6 +64,61 @@ router.post(
   }
 );
 
+// ── POST /api/clubs/:id/cover_image ───────────────────────────────────────
+router.post(
+  '/:id/cover_image',
+  requireAuth,
+  requireAnyRole('club_admin', 'faculty_coordinator'),
+  uploadImages.single('coverImage'),
+  handleUploadError,
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ success: false, message: 'No image provided' });
+      }
+
+      const club = await Club.findById(req.params.id);
+      if (!club) {
+        return res.status(404).json({ success: false, message: 'Club not found' });
+      }
+
+      // Authorization: Faculty Coordinator can only update their assigned club
+      if (req.user.role === 'faculty_coordinator') {
+        if (!club.facultyCoordinatorId || club.facultyCoordinatorId.toString() !== req.user.userId) {
+          return res.status(403).json({
+            success: false,
+            message: 'You are not assigned as the coordinator for this club',
+          });
+        }
+      }
+
+      const fileUri = getBase64DataURI(req.file);
+      const result = await uploadImage(fileUri, { folder: 'cnp/clubs/covers' });
+
+      // Clean up old cover image
+      if (club.coverImagePublicId) {
+        try {
+          await deleteAsset(club.coverImagePublicId, 'image');
+        } catch (err) {
+          console.error(`Failed to delete old club cover image ${club.coverImagePublicId}:`, err.message);
+        }
+      }
+
+      club.coverImage = result.secure_url;
+      club.coverImagePublicId = result.public_id;
+      await club.save();
+
+      res.status(200).json({
+        success: true,
+        message: 'Club cover image updated successfully',
+        data: { coverImage: club.coverImage },
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+);
+
 // ── POST /api/clubs ───────────────────────────────────────────────────────────
 // Create a new club.
 // Only club_admin can create clubs.
@@ -101,13 +157,88 @@ router.post('/', requireAuth, requireAnyRole('club_admin'), async (req, res) => 
   }
 });
 
+// ── PATCH /api/clubs/:clubId ──────────────────────────────────────────────────
+// Edit club details. Only club_admin can edit club details.
+router.patch('/:clubId', requireAuth, requireAnyRole('club_admin'), async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    const { clubId } = req.params;
+
+    const club = await Club.findById(clubId);
+    if (!club) {
+      return res.status(404).json({ success: false, message: 'Club not found' });
+    }
+
+    if (name !== undefined) club.name = name;
+    if (description !== undefined) club.description = description;
+
+    await club.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Club details updated successfully',
+      data: club,
+    });
+  } catch (error) {
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    if (error.name === 'CastError') {
+      return res.status(400).json({ success: false, message: 'Invalid club ID format' });
+    }
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ── PATCH /api/clubs/:clubId/coordinator ──────────────────────────────────────
+// Reassign Faculty Coordinator. Only club_admin can do this.
+router.patch('/:clubId/coordinator', requireAuth, requireAnyRole('club_admin'), async (req, res) => {
+  try {
+    const { facultyCoordinatorId } = req.body;
+    const { clubId } = req.params;
+
+    const club = await Club.findById(clubId);
+    if (!club) {
+      return res.status(404).json({ success: false, message: 'Club not found' });
+    }
+
+    // If they want to unset the coordinator
+    if (facultyCoordinatorId === null || facultyCoordinatorId === '') {
+      club.facultyCoordinatorId = null;
+    } else {
+      const fcUser = await User.findById(facultyCoordinatorId);
+      if (!fcUser) {
+        return res.status(404).json({ success: false, message: 'Supplied facultyCoordinatorId user not found' });
+      }
+      if (fcUser.role !== 'faculty_coordinator') {
+        return res.status(400).json({ success: false, message: 'Supplied user is not a faculty_coordinator' });
+      }
+      club.facultyCoordinatorId = facultyCoordinatorId;
+    }
+
+    await club.save();
+    await club.populate('facultyCoordinatorId', 'name email role profileImage department semester');
+
+    res.status(200).json({
+      success: true,
+      message: 'Faculty Coordinator updated successfully',
+      data: club,
+    });
+  } catch (error) {
+    if (error.name === 'CastError') {
+      return res.status(400).json({ success: false, message: 'Invalid ID format' });
+    }
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // ── GET /api/clubs ────────────────────────────────────────────────────────────
 // Return all clubs — publicly readable (any authenticated user).
 router.get('/', requireAuth, async (_req, res) => {
   try {
     const clubs = await Club.find()
-      .populate('facultyCoordinatorId', 'name email role')
-      .populate('createdBy', 'name email role')
+      .populate('facultyCoordinatorId', 'name email role profileImage department semester')
+      .populate('createdBy', 'name email role profileImage department semester')
       .sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -174,7 +305,7 @@ router.post(
       });
 
       // Populate student info before returning
-      await membership.populate('studentId', 'name email role');
+      await membership.populate('studentId', 'name email role profileImage department semester');
       await membership.populate('clubId', 'name');
 
       res.status(201).json({
@@ -214,7 +345,7 @@ router.get('/:clubId/members', requireAuth, async (req, res) => {
     }
 
     const members = await ClubMembership.find({ clubId })
-      .populate('studentId', 'name email role') // Only safe fields — no passwords
+      .populate('studentId', 'name email role profileImage department semester') // Only safe fields — no passwords
       .sort({ joinedAt: 1 });
 
     res.status(200).json({
@@ -230,5 +361,86 @@ router.get('/:clubId/members', requireAuth, async (req, res) => {
     });
   }
 });
+
+// ── DELETE /api/clubs/:clubId/members/:studentId ──────────────────────────────
+router.delete(
+  '/:clubId/members/:studentId',
+  requireAuth,
+  requireAnyRole('faculty_coordinator', 'club_admin'),
+  async (req, res) => {
+    try {
+      const { clubId, studentId } = req.params;
+
+      const club = await Club.findById(clubId);
+      if (!club) {
+        return res.status(404).json({ success: false, message: 'Club not found' });
+      }
+
+      if (req.user.role === 'faculty_coordinator') {
+        if (!club.facultyCoordinatorId || club.facultyCoordinatorId.toString() !== req.user.userId) {
+          return res.status(403).json({ success: false, message: 'You are not authorized to manage this club' });
+        }
+      }
+
+      const membership = await ClubMembership.findOneAndDelete({ clubId, studentId });
+      if (!membership) {
+        return res.status(404).json({ success: false, message: 'Membership not found' });
+      }
+
+      res.status(200).json({ success: true, message: 'Member removed successfully' });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+);
+
+// ── PATCH /api/clubs/:clubId/members/:studentId ───────────────────────────────
+router.patch(
+  '/:clubId/members/:studentId',
+  requireAuth,
+  requireAnyRole('faculty_coordinator', 'club_admin'),
+  async (req, res) => {
+    try {
+      const { clubId, studentId } = req.params;
+      const { membershipType, position } = req.body;
+
+      const club = await Club.findById(clubId);
+      if (!club) {
+        return res.status(404).json({ success: false, message: 'Club not found' });
+      }
+
+      if (req.user.role === 'faculty_coordinator') {
+        if (!club.facultyCoordinatorId || club.facultyCoordinatorId.toString() !== req.user.userId) {
+          return res.status(403).json({ success: false, message: 'You are not authorized to manage this club' });
+        }
+      }
+
+      if (membershipType && !['member', 'core_team'].includes(membershipType)) {
+        return res.status(400).json({ success: false, message: 'Invalid membershipType' });
+      }
+
+      const membership = await ClubMembership.findOne({ clubId, studentId });
+      if (!membership) {
+        return res.status(404).json({ success: false, message: 'Membership not found' });
+      }
+
+      if (membershipType !== undefined) {
+        membership.membershipType = membershipType;
+      }
+      
+      if (position !== undefined) {
+        membership.position = position || null;
+      }
+
+      await membership.save();
+      await membership.populate('studentId', 'name email role profileImage department semester');
+      await membership.populate('clubId', 'name');
+
+      res.status(200).json({ success: true, message: 'Membership updated successfully', data: membership });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+);
 
 export default router;

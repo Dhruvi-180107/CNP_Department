@@ -90,6 +90,32 @@ async function resolveProjectAccess(user, projectId) {
 // PROJECT UPDATE ROUTES
 // ══════════════════════════════════════════════════════════════════════════════
 
+import { requireRole } from '../middleware/requireRole.js';
+
+// ── GET /api/projects/updates/all ────────────────────────────────────────────
+// Fetch project updates globally. Only for project_admin.
+router.get(
+  '/updates/all',
+  requireAuth,
+  requireRole('project_admin'),
+  async (req, res) => {
+    try {
+      const updates = await ProjectUpdate.find()
+        .populate('studentId', 'name email role profileImage department semester')
+        .populate('projectId', 'name status')
+        .sort({ createdAt: -1 });
+
+      res.status(200).json({
+        success: true,
+        count: updates.length,
+        data: updates,
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+);
+
 // ── POST /api/projects/:projectId/updates ────────────────────────────────────
 // Student creates a project update.
 // SECURITY: studentId derived from req.user.userId — never from body.
@@ -174,7 +200,7 @@ router.post(
         files: uploadedFiles,
       });
 
-    await update.populate('studentId', 'name email role');
+    await update.populate('studentId', 'name email role profileImage department semester');
     await update.populate('projectId', 'name status');
 
     // Notify all Faculty Mentors assigned to this project (no duplicates — one per mentor)
@@ -228,7 +254,7 @@ router.get('/:projectId/updates', requireAuth, async (req, res) => {
     }
 
     const updates = await ProjectUpdate.find({ projectId })
-      .populate('studentId', 'name email role')
+      .populate('studentId', 'name email role profileImage department semester')
       .sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -270,7 +296,7 @@ router.get('/:projectId/updates/:updateId', requireAuth, async (req, res) => {
     }
 
     const update = await ProjectUpdate.findById(updateId)
-      .populate('studentId', 'name email role')
+      .populate('studentId', 'name email role profileImage department semester')
       .populate('projectId', 'name status');
 
     if (!update) {
@@ -365,7 +391,7 @@ router.patch('/:projectId/updates/:updateId', requireAuth, async (req, res) => {
     }
 
     await update.save();
-    await update.populate('studentId', 'name email role');
+    await update.populate('studentId', 'name email role profileImage department semester');
     await update.populate('projectId', 'name status');
 
     res.status(200).json({
@@ -540,7 +566,7 @@ router.post('/:projectId/feedback', requireAuth, async (req, res) => {
       feedbackText: feedbackText.trim(),
     });
 
-    await feedback.populate('mentorId', 'name email role');
+    await feedback.populate('mentorId', 'name email role profileImage department semester');
     await feedback.populate('projectId', 'name status');
     if (feedback.updateId) {
       await feedback.populate('updateId', 'title description');
@@ -581,7 +607,7 @@ router.get('/:projectId/feedback', requireAuth, async (req, res) => {
     }
 
     const feedbackList = await ProjectFeedback.find({ projectId })
-      .populate('mentorId', 'name email role')
+      .populate('mentorId', 'name email role profileImage department semester')
       .populate('updateId', 'title description createdAt')
       .sort({ createdAt: -1 });
 
@@ -636,7 +662,7 @@ router.get('/:projectId/updates/:updateId/feedback', requireAuth, async (req, re
     }
 
     const feedbackList = await ProjectFeedback.find({ projectId, updateId })
-      .populate('mentorId', 'name email role')
+      .populate('mentorId', 'name email role profileImage department semester')
       .populate('updateId', 'title description createdAt')
       .sort({ createdAt: -1 });
 

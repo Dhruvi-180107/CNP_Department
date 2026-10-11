@@ -32,7 +32,7 @@ const router = express.Router();
 router.get('/', requireAuth, async (_req, res) => {
   try {
     const items = await GuitarInventory.find()
-      .populate('createdBy', 'name email role')
+      .populate('createdBy', 'name email role department semester')
       .sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -77,7 +77,7 @@ router.post('/', requireAuth, requireRole('project_admin'), async (req, res) => 
       createdBy, // SECURITY: JWT-derived
     });
 
-    await item.populate('createdBy', 'name email role');
+    await item.populate('createdBy', 'name email role department semester');
 
     res.status(201).json({
       success: true,
@@ -97,7 +97,7 @@ router.post('/', requireAuth, requireRole('project_admin'), async (req, res) => 
 router.get('/:itemId', requireAuth, async (req, res) => {
   try {
     const { itemId } = req.params;
-    const item = await GuitarInventory.findById(itemId).populate('createdBy', 'name email role');
+    const item = await GuitarInventory.findById(itemId).populate('createdBy', 'name email role department semester');
     if (!item) {
       return res.status(404).json({ success: false, message: 'Inventory item not found' });
     }
@@ -129,7 +129,7 @@ router.put('/:itemId', requireAuth, requireRole('project_admin'), async (req, re
     if (location != null) item.location = location;
 
     await item.save();
-    await item.populate('createdBy', 'name email role');
+    await item.populate('createdBy', 'name email role department semester');
 
     res.status(200).json({
       success: true,
@@ -205,7 +205,7 @@ router.patch('/:itemId/quantity', requireAuth, requireRole('project_admin'), asy
     }
 
     await item.save();
-    await item.populate('createdBy', 'name email role');
+    await item.populate('createdBy', 'name email role department semester');
 
     res.status(200).json({
       success: true,
@@ -258,7 +258,7 @@ router.get('/:itemId/allocations', requireAuth, requireRole('project_admin'), as
 
     const allocations = await InventoryAllocation.find({ inventoryItemId: itemId })
       .populate('projectId', 'name status')
-      .populate('allocatedBy', 'name email role')
+      .populate('allocatedBy', 'name email role department semester')
       .populate('materialRequestId', 'quantity reason createdAt')
       .sort({ allocatedAt: -1 });
 

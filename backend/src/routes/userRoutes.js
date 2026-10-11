@@ -121,6 +121,49 @@ router.post(
   }
 );
 
+// ── PATCH /api/users/profile ─────────────────────────────────────────────────
+// Update authenticated user's profile details.
+router.patch('/profile', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { name, department, universityId, semester, phone, bio } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    if (name !== undefined) {
+      if (!name.trim()) return res.status(400).json({ success: false, message: 'Name cannot be empty' });
+      user.name = name.trim();
+    }
+    if (department !== undefined) user.department = department.trim();
+    if (universityId !== undefined) user.universityId = universityId.trim();
+    if (semester !== undefined) {
+      if (semester === '' || semester === null) {
+        user.semester = null;
+      } else {
+        user.semester = Number(semester);
+      }
+    }
+    if (phone !== undefined) user.phone = phone.trim();
+    if (bio !== undefined) user.bio = bio.trim();
+
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: user,
+    });
+  } catch (error) {
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // ── GET /api/users/:userId/projects ──────────────────────────────────────────
 // Return all projects a student belongs to (populated project documents).
 // SECURITY (2J Part 2):

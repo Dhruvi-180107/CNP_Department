@@ -20,6 +20,14 @@ const clubSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    coverImage: {
+      type: String,
+      default: null,
+    },
+    coverImagePublicId: {
+      type: String,
+      default: null,
+    },
     images: {
       type: [mongoose.Schema.Types.Mixed],
       default: [],

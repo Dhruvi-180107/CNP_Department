@@ -9,6 +9,7 @@ export interface User {
   phone?: string;
   bio?: string;
   profileImage?: string;
+  semester?: number;
 }
 
 export interface Club {

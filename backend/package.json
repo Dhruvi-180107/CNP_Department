@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js",
-    "test:cloudinary": "node test_cloudinary.mjs"
+    "test:cloudinary": "node test_cloudinary.mjs",
+    "seed": "node seed.mjs"
   },
   "keywords": [],
   "author": "",

@@ -39,7 +39,7 @@ router.get('/:projectId/materials', requireAuth, async (req, res) => {
     }
 
     const materials = await ProjectMaterial.find({ projectId })
-      .populate('addedBy', 'name email role')
+      .populate('addedBy', 'name email role department semester')
       .populate('inventoryItemId', 'name category')
       .sort({ createdAt: 1 });
 
@@ -59,13 +59,13 @@ router.get('/:projectId/team', requireAuth, async (req, res) => {
   try {
     const { projectId } = req.params;
 
-    const project = await Project.findById(projectId).populate('teamLeaderId', 'name email role');
+    const project = await Project.findById(projectId).populate('teamLeaderId', 'name email role department semester');
     if (!project) {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
 
     const members = await ProjectMembership.find({ projectId })
-      .populate('studentId', 'name email role')
+      .populate('studentId', 'name email role department semester')
       .sort({ joinedAt: 1 });
 
     const teamLeaderId = project.teamLeaderId ? project.teamLeaderId._id.toString() : null;

@@ -41,6 +41,30 @@ const eventSchema = new mongoose.Schema(
       trim: true,
     },
 
+    eventLink: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+
+    eventLinkName: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+
+    relatedDocumentName: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+
+    relatedDocument: {
+      url: String,
+      publicId: String,
+      originalName: String,
+    },
+
     // The user (faculty_coordinator or club_admin) who created this event
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,

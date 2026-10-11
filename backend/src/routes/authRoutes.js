@@ -48,7 +48,7 @@ function safeUser(user) {
 
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password, role, department, universityId, phone, bio } = req.body;
+    const { name, email, password, role, department, universityId, semester, phone, bio } = req.body;
 
     // ── Validate required fields ──────────────────────────────────────────────
     const missing = [];
@@ -97,6 +97,7 @@ router.post('/register', async (req, res) => {
       role,
       department:   department   || undefined,
       universityId: universityId || undefined,
+      semester:     semester     || undefined,
       phone:        phone        || undefined,
       bio:          bio          || undefined,
     });
