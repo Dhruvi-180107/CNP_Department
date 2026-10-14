@@ -1,4 +1,4 @@
-export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+export const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/+$/, '');
 
 export function getStoredToken(): string | null {
   return localStorage.getItem('cnp_auth_token');
@@ -52,10 +52,10 @@ export async function api<T>(method: string, endpoint: string, body?: any): Prom
       response.status === 401
         ? 'Authentication required'
         : response.status === 403
-        ? 'Access forbidden'
-        : response.status === 404
-        ? 'Resource not found'
-        : 'API Request Failed';
+          ? 'Access forbidden'
+          : response.status === 404
+            ? 'Resource not found'
+            : 'API Request Failed';
     const message = data?.message || defaultMsg;
     throw new ApiError(message, response.status, data);
   }
