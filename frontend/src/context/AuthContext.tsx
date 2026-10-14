@@ -11,6 +11,16 @@ interface AuthContextType {
   updateUser: (user: User) => void;
 }
 
+export function isProfileComplete(user: any): boolean {
+  if (!user) return false;
+  const hasName = !!(user.name && user.name.trim());
+  const hasDept = !!(user.department && user.department.trim());
+  const hasPhone = !!(user.phone && user.phone.trim());
+  const hasUniId = !!(user.universityId && user.universityId.trim());
+  const hasSemester = !!user.semester;
+  return hasName && hasDept && hasPhone && (user.role === 'student' ? (hasUniId && hasSemester) : true);
+}
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {

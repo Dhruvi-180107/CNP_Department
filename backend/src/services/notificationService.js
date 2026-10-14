@@ -22,6 +22,7 @@
  */
 
 import Notification from '../models/Notification.js';
+import User from '../models/User.js';
 
 /**
  * Create a single notification.
@@ -34,10 +35,53 @@ import Notification from '../models/Notification.js';
  * @param {string|import('mongoose').Types.ObjectId|null} [params.relatedId]
  * @returns {Promise<import('mongoose').Document>}  created Notification document
  */
-export async function createNotification({ userId, type, title, message, relatedId = null }) {
+export async function createNotification({
+  userId,
+  type,
+  title,
+  message,
+  relatedId = null,
+  link = null,
+  actionText = null,
+  metadata = null,
+}) {
   if (!userId || !type || !title || !message) {
     console.error('[NotificationService] Missing required field:', { userId, type, title, message });
     throw new Error('createNotification: userId, type, title, and message are required');
+  }
+
+  // Deduplication check:
+  // If a notification for the same recipient, type, and triggering entity (relatedId) already exists,
+  // prevent duplicate creation. Enrich existing notification if new metadata/link is supplied.
+  const targetRelatedId = relatedId || metadata?.joinRequestId || null;
+  if (targetRelatedId) {
+    const existing = await Notification.findOne({
+      userId,
+      type,
+      relatedId: targetRelatedId,
+    });
+    if (existing) {
+      let updated = false;
+      if (!existing.link && link) {
+        existing.link = link;
+        updated = true;
+      }
+      if (!existing.actionText && actionText) {
+        existing.actionText = actionText;
+        updated = true;
+      }
+      if (metadata) {
+        existing.metadata = {
+          ...(existing.metadata?.toObject ? existing.metadata.toObject() : existing.metadata || {}),
+          ...metadata,
+        };
+        updated = true;
+      }
+      if (updated) {
+        await existing.save();
+      }
+      return existing;
+    }
   }
 
   const notification = await Notification.create({
@@ -46,6 +90,9 @@ export async function createNotification({ userId, type, title, message, related
     title,
     message,
     relatedId: relatedId || null,
+    link: link || null,
+    actionText: actionText || null,
+    metadata: metadata || null,
     isRead: false,
   });
 
@@ -74,4 +121,66 @@ export async function createNotifications(notifications) {
   }
 
   return created;
+}
+
+/**
+ * Notify all registered users across all 5 roles about an event (creation or reminder).
+ * Uses batching and deduplication to avoid N+1 queries.
+ *
+ * @param {object} params
+ * @param {object} params.event
+ * @param {string} params.clubName
+ * @param {'event_created'|'event_reminder'} params.type
+ * @param {string} params.title
+ * @param {string} params.message
+ * @returns {Promise<import('mongoose').Document[]>}
+ */
+export async function notifyAllUsersOfEvent({
+  event,
+  clubName,
+  type,
+  title,
+  message,
+}) {
+  const users = await User.find({
+    role: { $in: ['student', 'faculty_coordinator', 'faculty_mentor', 'club_admin', 'project_admin'] },
+  }).select('_id');
+
+  if (!users || users.length === 0) return [];
+
+  // Deduplication check: get all existing notifications for this event and type
+  const existing = await Notification.find({
+    type,
+    relatedId: event._id,
+  }).select('userId');
+  const existingUserIds = new Set(existing.map((n) => n.userId.toString()));
+
+  const newRecipients = users.filter((u) => !existingUserIds.has(u._id.toString()));
+  if (newRecipients.length === 0) return [];
+
+  const link = `/events#event-${event._id}`;
+  const actionText = 'View Event';
+  const metadata = {
+    clubId: event.clubId?._id || event.clubId,
+    clubName,
+    entityName: event.title,
+    eventDate: event.eventDate,
+    location: event.location,
+    action: type,
+  };
+
+  const docs = newRecipients.map((u) => ({
+    userId: u._id,
+    type,
+    title,
+    message,
+    relatedId: event._id,
+    link,
+    actionText,
+    metadata,
+    isRead: false,
+  }));
+
+  const inserted = await Notification.insertMany(docs, { ordered: false });
+  return inserted;
 }

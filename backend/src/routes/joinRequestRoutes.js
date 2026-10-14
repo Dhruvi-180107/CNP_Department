@@ -6,7 +6,7 @@ import ClubMembership from '../models/ClubMembership.js';
 import ProjectMembership from '../models/ProjectMembership.js';
 import ProjectMentor from '../models/ProjectMentor.js';
 import User from '../models/User.js';
-import { createNotification } from '../services/notificationService.js';
+import { createNotification, createNotifications } from '../services/notificationService.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireAnyRole } from '../middleware/requireRole.js';
 
@@ -104,14 +104,61 @@ clubJoinRouter.post('/:clubId/join', requireAuth, requireAnyRole('student'), asy
     await joinRequest.populate('clubId', 'name description');
     await joinRequest.populate('reviewerId', 'name email role department semester');
 
-    // Notify Faculty Coordinator about the new club join request
-    createNotification({
-      userId: club.facultyCoordinatorId,
-      type: 'club_join_request',
-      title: 'New Club Join Request',
-      message: `${student.name} has requested to join ${club.name}.`,
-      relatedId: joinRequest._id,
-    }).catch((e) => console.error('[Notification] club_join_request:', e.message));
+    const studentName = student.name || 'A student';
+    const clubName = club.name || 'this club';
+    const notificationTitle = 'New Club Join Request';
+    const notificationMessage = `${studentName} has requested to join ${clubName}.`;
+
+    const notificationMetadata = {
+      actorId: student._id,
+      actorName: student.name,
+      actorEmail: student.email,
+      department: student.department || null,
+      semester: student.semester || null,
+      status: 'pending',
+      requestDate: joinRequest.createdAt,
+      clubId: club._id,
+      clubName: club.name,
+      joinRequestId: joinRequest._id,
+      action: 'join_requested',
+    };
+
+    // 1. Notify Faculty Coordinator assigned to this specific club
+    try {
+      await createNotification({
+        userId: club.facultyCoordinatorId,
+        type: 'club_join_request',
+        title: notificationTitle,
+        message: notificationMessage,
+        relatedId: joinRequest._id,
+        link: `/clubs/${club._id}#join-requests`,
+        actionText: 'Review Request',
+        metadata: notificationMetadata,
+      });
+    } catch (e) {
+      console.error('[Notification] club_join_request Faculty Coordinator:', e.message);
+    }
+
+    // 2. Notify Club Admin(s)
+    try {
+      const clubAdmins = await User.find({ role: 'club_admin' });
+      if (clubAdmins.length > 0) {
+        await createNotifications(
+          clubAdmins.map((admin) => ({
+            userId: admin._id,
+            type: 'club_join_request',
+            title: notificationTitle,
+            message: notificationMessage,
+            relatedId: joinRequest._id,
+            link: `/clubs/${club._id}#join-requests`,
+            actionText: 'Review Request',
+            metadata: notificationMetadata,
+          }))
+        );
+      }
+    } catch (e) {
+      console.error('[Notification] club_join_request Club Admin:', e.message);
+    }
 
     res.status(201).json({
       success: true,
@@ -201,14 +248,61 @@ projectJoinRouter.post('/:projectId/join', requireAuth, requireAnyRole('student'
     await joinRequest.populate('projectId', 'name description status');
     await joinRequest.populate('reviewerId', 'name email role department semester');
 
-    // Notify the primary Faculty Mentor about the new project join request
-    createNotification({
-      userId: primaryMentor._id,
-      type: 'project_join_request',
-      title: 'New Project Join Request',
-      message: `${student.name} has requested to join project "${project.name}".`,
-      relatedId: joinRequest._id,
-    }).catch((e) => console.error('[Notification] project_join_request:', e.message));
+    const studentName = student.name || 'A student';
+    const projectName = project.name || 'this project';
+    const notificationTitle = 'New Project Join Request';
+    const notificationMessage = `${studentName} has requested to join ${projectName}.`;
+
+    const notificationMetadata = {
+      actorId: student._id,
+      actorName: student.name,
+      actorEmail: student.email,
+      department: student.department || null,
+      semester: student.semester || null,
+      status: 'pending',
+      requestDate: joinRequest.createdAt,
+      projectId: project._id,
+      projectName: project.name,
+      joinRequestId: joinRequest._id,
+      action: 'join_requested',
+    };
+
+    // 1. Notify the primary Faculty Mentor about the new project join request
+    try {
+      await createNotification({
+        userId: primaryMentor._id,
+        type: 'project_join_request',
+        title: notificationTitle,
+        message: notificationMessage,
+        relatedId: joinRequest._id,
+        link: `/projects/${project._id}#join-requests`,
+        actionText: 'Review Request',
+        metadata: notificationMetadata,
+      });
+    } catch (e) {
+      console.error('[Notification] project_join_request Faculty Mentor:', e.message);
+    }
+
+    // 2. Notify Project Admin(s)
+    try {
+      const projectAdmins = await User.find({ role: 'project_admin' });
+      if (projectAdmins.length > 0) {
+        await createNotifications(
+          projectAdmins.map((admin) => ({
+            userId: admin._id,
+            type: 'project_join_request',
+            title: notificationTitle,
+            message: notificationMessage,
+            relatedId: joinRequest._id,
+            link: `/projects/${project._id}#join-requests`,
+            actionText: 'Review Request',
+            metadata: notificationMetadata,
+          }))
+        );
+      }
+    } catch (e) {
+      console.error('[Notification] project_join_request Project Admin:', e.message);
+    }
 
     res.status(201).json({
       success: true,
@@ -243,7 +337,7 @@ joinRequestRouter.get(
   async (req, res) => {
     try {
       const requests = await JoinRequest.find({ requestType: 'club' })
-        .populate('studentId', 'name email role department semester')
+        .populate('studentId', 'name email role department semester enrollmentNumber')
         .populate('clubId', 'name description')
         .populate('reviewerId', 'name email role department semester')
         .sort({ createdAt: -1 });
@@ -268,7 +362,7 @@ joinRequestRouter.get(
   async (req, res) => {
     try {
       const requests = await JoinRequest.find({ requestType: 'project' })
-        .populate('studentId', 'name email role department semester')
+        .populate('studentId', 'name email role department semester enrollmentNumber')
         .populate('projectId', 'name description status')
         .populate('reviewerId', 'name email role department semester')
         .sort({ createdAt: -1 });
@@ -279,6 +373,98 @@ joinRequestRouter.get(
         data: requests,
       });
     } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+);
+
+// ── GET /api/join-requests/club/:clubId ──────────────────────────────────────
+// Fetch join requests for a specific club.
+// Allowed:
+//  - club_admin (can view any club's requests)
+//  - faculty_coordinator (only if assigned to this specific club)
+joinRequestRouter.get(
+  '/club/:clubId',
+  requireAuth,
+  requireAnyRole('club_admin', 'faculty_coordinator'),
+  async (req, res) => {
+    try {
+      const { clubId } = req.params;
+
+      if (req.user.role === 'faculty_coordinator') {
+        const club = await Club.findById(clubId);
+        if (!club) {
+          return res.status(404).json({ success: false, message: 'Club not found' });
+        }
+        if (!club.facultyCoordinatorId || club.facultyCoordinatorId.toString() !== req.user.userId) {
+          return res.status(403).json({
+            success: false,
+            message: 'You are not authorized to view join requests for this club',
+          });
+        }
+      }
+
+      const requests = await JoinRequest.find({ clubId, requestType: 'club' })
+        .populate('studentId', 'name email role department semester enrollmentNumber')
+        .populate('clubId', 'name description')
+        .populate('reviewerId', 'name email role department semester')
+        .sort({ createdAt: -1 });
+
+      res.status(200).json({
+        success: true,
+        count: requests.length,
+        data: requests,
+      });
+    } catch (error) {
+      if (error.name === 'CastError') {
+        return res.status(400).json({ success: false, message: 'Invalid ID format' });
+      }
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+);
+
+// ── GET /api/join-requests/project/:projectId ────────────────────────────────
+// Fetch join requests for a specific project.
+// Allowed:
+//  - project_admin (can view any project's requests)
+//  - faculty_mentor (only if assigned as mentor to this project)
+joinRequestRouter.get(
+  '/project/:projectId',
+  requireAuth,
+  requireAnyRole('project_admin', 'faculty_mentor'),
+  async (req, res) => {
+    try {
+      const { projectId } = req.params;
+
+      if (req.user.role === 'faculty_mentor') {
+        const isMentor = await ProjectMentor.findOne({
+          projectId,
+          mentorId: req.user.userId,
+        });
+        if (!isMentor) {
+          return res.status(403).json({
+            success: false,
+            message: 'You are not authorized to view join requests for this project',
+          });
+        }
+      }
+
+      const requests = await JoinRequest.find({ projectId, requestType: 'project' })
+        .populate('studentId', 'name email role department semester enrollmentNumber')
+        .populate('projectId', 'name description status')
+        .populate('reviewerId', 'name email role department semester')
+        .sort({ createdAt: -1 });
+
+      res.status(200).json({
+        success: true,
+        count: requests.length,
+        data: requests,
+      });
+    } catch (error) {
+      if (error.name === 'CastError') {
+        return res.status(400).json({ success: false, message: 'Invalid ID format' });
+      }
       res.status(500).json({ success: false, message: error.message });
     }
   }
@@ -297,7 +483,7 @@ joinRequestRouter.get(
 
       // Fetch all pending requests where this user is the reviewer
       const requests = await JoinRequest.find({ reviewerId, status: 'pending' })
-        .populate('studentId', 'name email role department semester')
+        .populate('studentId', 'name email role department semester enrollmentNumber')
         .populate('clubId', 'name description')
         .populate('projectId', 'name description status')
         .sort({ createdAt: -1 });
@@ -441,17 +627,31 @@ joinRequestRouter.patch(
         joinRequest.status = 'approved';
         await joinRequest.save();
 
-        await membership.populate('studentId', 'name email role department semester');
+        await membership.populate('studentId', 'name email role department semester enrollmentNumber');
         await membership.populate('clubId', 'name');
 
         // Notify the student that their club join request was approved
-        createNotification({
-          userId: joinRequest.studentId,
-          type: 'club_join_approved',
-          title: 'Club Join Request Approved',
-          message: `Your request to join ${club.name} has been approved. Welcome!`,
-          relatedId: joinRequest._id,
-        }).catch((e) => console.error('[Notification] club_join_approved:', e.message));
+        const approverName = req.user.name || 'Faculty Coordinator';
+        try {
+          await createNotification({
+            userId: joinRequest.studentId,
+            type: 'club_join_approved',
+            title: 'Club Join Request Approved',
+            message: `Your request to join ${club.name} was approved by ${approverName}. Welcome to the club!`,
+            relatedId: joinRequest._id,
+            link: `/clubs/${club._id}`,
+            actionText: 'View Club',
+            metadata: {
+              actorId: req.user.userId,
+              actorName: approverName,
+              clubId: club._id,
+              clubName: club.name,
+              action: 'approved',
+            },
+          });
+        } catch (e) {
+          console.error('[Notification] club_join_approved:', e.message);
+        }
 
         return res.status(200).json({
           success: true,
@@ -471,13 +671,10 @@ joinRequestRouter.patch(
         }
 
         if (actingRole === 'faculty_mentor') {
-          // Must be the PRIMARY mentor of this specific project
-          const mentorRecord = await ProjectMentor.findOne({
-            projectId: joinRequest.projectId,
-            mentorId: actingUserId,
-            isPrimary: true,
-          });
-          if (!mentorRecord) {
+          // Must be the primary mentor of this specific project
+          const primaryMentor = await getPrimaryMentor(joinRequest.projectId);
+          const isPrimary = primaryMentor && primaryMentor._id.toString() === actingUserId;
+          if (!isPrimary) {
             return res.status(403).json({
               success: false,
               message: 'Only the primary Faculty Mentor of this project can approve project join requests',
@@ -512,17 +709,32 @@ joinRequestRouter.patch(
         joinRequest.status = 'approved';
         await joinRequest.save();
 
-        await membership.populate('studentId', 'name email role department semester');
+        await membership.populate('studentId', 'name email role department semester enrollmentNumber');
         await membership.populate('projectId', 'name status');
 
         // Notify the student that their project join request was approved
-        createNotification({
-          userId: joinRequest.studentId,
-          type: 'project_join_approved',
-          title: 'Project Join Request Approved',
-          message: `Your request to join project "${membership.projectId?.name || 'the project'}" has been approved. You are now a project member!`,
-          relatedId: joinRequest._id,
-        }).catch((e) => console.error('[Notification] project_join_approved:', e.message));
+        const approverName = req.user.name || 'Faculty Mentor';
+        const projName = membership.projectId?.name || 'the project';
+        try {
+          await createNotification({
+            userId: joinRequest.studentId,
+            type: 'project_join_approved',
+            title: 'Project Join Request Approved',
+            message: `Your request to join project "${projName}" was approved by ${approverName}. Welcome to the team!`,
+            relatedId: joinRequest._id,
+            link: `/projects/${joinRequest.projectId}`,
+            actionText: 'View Project',
+            metadata: {
+              actorId: req.user.userId,
+              actorName: approverName,
+              projectId: joinRequest.projectId,
+              projectName: projName,
+              action: 'approved',
+            },
+          });
+        } catch (e) {
+          console.error('[Notification] project_join_approved:', e.message);
+        }
 
         return res.status(200).json({
           success: true,
@@ -599,12 +811,10 @@ joinRequestRouter.patch(
         }
 
         if (actingRole === 'faculty_mentor') {
-          const mentorRecord = await ProjectMentor.findOne({
-            projectId: joinRequest.projectId,
-            mentorId: actingUserId,
-            isPrimary: true,
-          });
-          if (!mentorRecord) {
+          // Must be the primary mentor of this specific project
+          const primaryMentor = await getPrimaryMentor(joinRequest.projectId);
+          const isPrimary = primaryMentor && primaryMentor._id.toString() === actingUserId;
+          if (!isPrimary) {
             return res.status(403).json({
               success: false,
               message: 'Only the primary Faculty Mentor of this project can reject project join requests',
@@ -618,24 +828,51 @@ joinRequestRouter.patch(
       await joinRequest.save();
 
       // Notify the student about the rejection
+      const reviewerName = req.user.name || 'Coordinator';
       if (joinRequest.requestType === 'club') {
         const clubDoc = await Club.findById(joinRequest.clubId).select('name');
-        createNotification({
-          userId: joinRequest.studentId,
-          type: 'club_join_rejected',
-          title: 'Club Join Request Rejected',
-          message: `Your request to join ${clubDoc?.name || 'the club'} has been rejected.`,
-          relatedId: joinRequest._id,
-        }).catch((e) => console.error('[Notification] club_join_rejected:', e.message));
+        try {
+          await createNotification({
+            userId: joinRequest.studentId,
+            type: 'club_join_rejected',
+            title: 'Club Join Request Rejected',
+            message: `Your request to join ${clubDoc?.name || 'the club'} was rejected by ${reviewerName}.`,
+            relatedId: joinRequest._id,
+            link: `/clubs/${joinRequest.clubId}`,
+            actionText: 'View Club',
+            metadata: {
+              actorId: req.user.userId,
+              actorName: reviewerName,
+              clubId: joinRequest.clubId,
+              clubName: clubDoc?.name,
+              action: 'rejected',
+            },
+          });
+        } catch (e) {
+          console.error('[Notification] club_join_rejected:', e.message);
+        }
       } else if (joinRequest.requestType === 'project') {
         const projDoc = await Project.findById(joinRequest.projectId).select('name');
-        createNotification({
-          userId: joinRequest.studentId,
-          type: 'project_join_rejected',
-          title: 'Project Join Request Rejected',
-          message: `Your request to join project "${projDoc?.name || 'the project'}" has been rejected.`,
-          relatedId: joinRequest._id,
-        }).catch((e) => console.error('[Notification] project_join_rejected:', e.message));
+        try {
+          await createNotification({
+            userId: joinRequest.studentId,
+            type: 'project_join_rejected',
+            title: 'Project Join Request Rejected',
+            message: `Your request to join project "${projDoc?.name || 'the project'}" was rejected by ${reviewerName}.`,
+            relatedId: joinRequest._id,
+            link: `/projects/${joinRequest.projectId}`,
+            actionText: 'View Project',
+            metadata: {
+              actorId: req.user.userId,
+              actorName: reviewerName,
+              projectId: joinRequest.projectId,
+              projectName: projDoc?.name,
+              action: 'rejected',
+            },
+          });
+        } catch (e) {
+          console.error('[Notification] project_join_rejected:', e.message);
+        }
       }
 
       res.status(200).json({

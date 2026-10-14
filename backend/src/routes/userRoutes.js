@@ -25,6 +25,79 @@ import { uploadImage, deleteAsset } from '../services/cloudinaryService.js';
 
 const router = express.Router();
 
+const VALID_ROLES = ['student', 'faculty_coordinator', 'faculty_mentor', 'club_admin', 'project_admin'];
+const ADMIN_ROLES = ['project_admin', 'club_admin', 'faculty_coordinator'];
+
+// ── GET /api/users ───────────────────────────────────────────────────────────
+// List registered users filtered by role.
+// Used for searchable user dropdowns across admin & coordinator assignment workflows.
+// SECURITY:
+//   - Requires authentication (JWT).
+//   - Only project_admin, club_admin, and faculty_coordinator can access.
+//   - faculty_coordinator can ONLY query students.
+//   - Passwords and sensitive fields are excluded.
+router.get('/', requireAuth, async (req, res) => {
+  try {
+    const callerRole = req.user.role;
+
+    // 1. Authorization: Only administrative roles can list users
+    if (!ADMIN_ROLES.includes(callerRole)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied: administrative role required',
+      });
+    }
+
+    const filter = {};
+
+    // 2. Role filtering & scoping
+    if (callerRole === 'faculty_coordinator') {
+      // Faculty coordinators are strictly limited to querying students
+      if (req.query.role && req.query.role !== 'student') {
+        return res.status(403).json({
+          success: false,
+          message: 'Faculty coordinators are only authorized to query students',
+        });
+      }
+      filter.role = 'student';
+    } else if (req.query.role) {
+      if (!VALID_ROLES.includes(req.query.role)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid role filter. Allowed values: ${VALID_ROLES.join(', ')}`,
+        });
+      }
+      filter.role = req.query.role;
+    }
+
+    // 3. Search filtering (name, email, department)
+    if (req.query.search && req.query.search.trim()) {
+      const escaped = req.query.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(escaped, 'i');
+      filter.$or = [
+        { name: searchRegex },
+        { email: searchRegex },
+        { department: searchRegex },
+        { enrollmentNumber: searchRegex },
+      ];
+    }
+
+    // 4. Query DB excluding password
+    const users = await User.find(filter)
+      .select('_id name email role department semester universityId enrollmentNumber profileImage phone')
+      .sort({ name: 1 })
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      count: users.length,
+      data: users,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // ── POST /api/users/test ─────────────────────────────────────────────────────
 // DEV ONLY: Create a user without authentication.
 // Returns existing user if the email is already registered (idempotent).
@@ -126,7 +199,7 @@ router.post(
 router.patch('/profile', requireAuth, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { name, department, universityId, semester, phone, bio } = req.body;
+    const { name, department, universityId, semester, phone, bio, enrollmentNumber } = req.body;
 
     const user = await User.findById(userId);
     if (!user) {
@@ -148,6 +221,12 @@ router.patch('/profile', requireAuth, async (req, res) => {
     }
     if (phone !== undefined) user.phone = phone.trim();
     if (bio !== undefined) user.bio = bio.trim();
+    if (enrollmentNumber !== undefined) {
+      // Enrollment Number only applies to students
+      if (user.role === 'student') {
+        user.enrollmentNumber = enrollmentNumber === '' || enrollmentNumber === null ? null : enrollmentNumber.trim();
+      }
+    }
 
     await user.save();
 
@@ -195,7 +274,7 @@ router.get('/:userId/projects', requireAuth, async (req, res) => {
     }
 
     const memberships = await ProjectMembership.find({ studentId: userId })
-      .populate('projectId', 'name description image status createdAt updatedAt')
+      .populate('projectId', 'name description image status teamLeaderId createdAt updatedAt')
       .sort({ joinedAt: 1 });
 
     // Return the project documents directly (not the membership wrappers)

@@ -34,6 +34,13 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { requireAnyRole } from '../middleware/requireRole.js';
 import { uploadMixed, getBase64DataURI, handleUploadError } from '../middleware/upload.js';
 import { uploadRaw, deleteAsset } from '../services/cloudinaryService.js';
+import { notifyAllUsersOfEvent } from '../services/notificationService.js';
+import {
+  calculateReminderScheduledFor,
+  shouldSkipReminder,
+  buildEventCreatedMessage,
+  checkAndSendEventReminders,
+} from '../services/eventReminderService.js';
 
 const router = express.Router();
 
@@ -166,6 +173,10 @@ router.post(
         };
       }
 
+      // ── Process reminder scheduling ────────────────────────────────────────
+      const reminderScheduledFor = calculateReminderScheduledFor(parsedDate);
+      const reminderSkipped = shouldSkipReminder(parsedDate, Date.now());
+
       // ── Create event — createdBy from JWT ──────────────────────────────────
       const event = await Event.create({
         title:       title.trim(),
@@ -178,10 +189,28 @@ router.post(
         relatedDocumentName: relatedDocumentName ? relatedDocumentName.trim() : '',
         relatedDocument,
         createdBy:   actingUser.userId, // SECURITY: from JWT
+        reminderScheduledFor,
+        reminderSkipped,
+        reminderSent: false,
       });
 
-      await event.populate('clubId', 'name description');
+      await event.populate('clubId', 'name description facultyCoordinatorId logo coverImage');
       await event.populate('createdBy', 'name email role department semester');
+
+      // ── Global event creation notification (all registered users) ─────────
+      try {
+        const clubName = event.clubId?.name || 'Department Club';
+        const message = buildEventCreatedMessage(event, clubName);
+        await notifyAllUsersOfEvent({
+          event,
+          clubName,
+          type: 'event_created',
+          title: 'New Event Created',
+          message,
+        });
+      } catch (notifErr) {
+        console.error('[Notification] Event creation notification error:', notifErr.message);
+      }
 
       return res.status(201).json({
         success: true,
@@ -206,7 +235,7 @@ router.get('/upcoming', requireAuth, async (_req, res) => {
     const now = new Date();
 
     const events = await Event.find({ eventDate: { $gte: now } })
-      .populate('clubId', 'name description facultyCoordinatorId')
+      .populate('clubId', 'name description facultyCoordinatorId logo coverImage')
       .populate('createdBy', 'name email role department semester')
       .sort({ eventDate: 1 }); // Soonest first
 
@@ -229,7 +258,7 @@ router.get('/upcoming', requireAuth, async (_req, res) => {
 router.get('/', requireAuth, async (_req, res) => {
   try {
     const events = await Event.find()
-      .populate('clubId', 'name description facultyCoordinatorId')
+      .populate('clubId', 'name description facultyCoordinatorId logo coverImage')
       .populate('createdBy', 'name email role department semester')
       .sort({ eventDate: -1 });
 
@@ -257,7 +286,7 @@ router.get('/:eventId', requireAuth, async (req, res) => {
     }
 
     const event = await Event.findById(eventId)
-      .populate('clubId', 'name description facultyCoordinatorId logo')
+      .populate('clubId', 'name description facultyCoordinatorId logo coverImage')
       .populate('createdBy', 'name email role department semester');
 
     if (!event) {
@@ -343,6 +372,13 @@ router.put(
           return res.status(400).json({ success: false, message: 'Invalid eventDate — must be a valid date string' });
         }
         event.eventDate = parsed;
+
+        // If reminder was not yet sent, recalculate reminder schedule
+        if (!event.reminderSent) {
+          const newReminderTime = calculateReminderScheduledFor(parsed);
+          event.reminderScheduledFor = newReminderTime;
+          event.reminderSkipped = shouldSkipReminder(parsed, Date.now());
+        }
       }
       if (eventLink !== undefined) {
         event.eventLink = eventLink.trim();
@@ -389,7 +425,7 @@ router.put(
       }
 
       await event.save();
-      await event.populate('clubId', 'name description');
+      await event.populate('clubId', 'name description facultyCoordinatorId logo coverImage');
       await event.populate('createdBy', 'name email role department semester');
 
       return res.status(200).json({
@@ -455,6 +491,23 @@ router.delete(
     }
   }
 );
+// ══════════════════════════════════════════════════════════════════════════════
+// TRIGGER 24-HOUR REMINDERS (Manual / External Cron Trigger)
+// POST /api/events/reminders/process
+// ══════════════════════════════════════════════════════════════════════════════
+
+router.post('/reminders/process', requireAuth, async (_req, res) => {
+  try {
+    const processed = await checkAndSendEventReminders();
+    return res.status(200).json({
+      success: true,
+      message: `Event reminder check completed. Processed ${processed} events.`,
+      processed,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 // ══════════════════════════════════════════════════════════════════════════════
 // D. GET EVENTS FOR A CLUB
@@ -478,6 +531,7 @@ clubEventsRouter.get('/:clubId/events', requireAuth, async (req, res) => {
     }
 
     const events = await Event.find({ clubId })
+      .populate('clubId', 'name description facultyCoordinatorId logo coverImage')
       .populate('createdBy', 'name email role department semester')
       .sort({ eventDate: 1 });
 

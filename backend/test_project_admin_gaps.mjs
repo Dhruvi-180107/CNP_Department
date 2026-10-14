@@ -36,29 +36,22 @@ async function runTests() {
   await mongoose.connect(process.env.MONGODB_URI);
   console.log('Connected to DB.');
 
-  // Clean DB
-  await User.deleteMany({});
-  await Club.deleteMany({});
-  await Project.deleteMany({});
-  await ProjectMembership.deleteMany({});
-  await JoinRequest.deleteMany({});
-  await ProjectMentor.deleteMany({});
-  await ProjectUpdate.deleteMany({});
+  const ts = Date.now();
 
-  // Create Users
-  const admin = await User.create({ name: 'Admin', email: 'admin@t.c', password: '123', role: 'project_admin' });
-  const student = await User.create({ name: 'Student', email: 'st@t.c', password: '123', role: 'student' });
-  const student2 = await User.create({ name: 'Student 2', email: 'st2@t.c', password: '123', role: 'student' });
-  const mentor = await User.create({ name: 'Mentor', email: 'm@t.c', password: '123', role: 'faculty_mentor' });
-  const clubAdmin = await User.create({ name: 'ClubAdmin', email: 'ca@t.c', password: '123', role: 'club_admin' });
-  const coord = await User.create({ name: 'Coord', email: 'c@t.c', password: '123', role: 'faculty_coordinator' });
+  // Create Users with isolated test identities
+  const admin = await User.create({ name: 'Admin', email: `gap_admin_${ts}@t.c`, password: '123', role: 'project_admin' });
+  const student = await User.create({ name: 'Student', email: `gap_st_${ts}@t.c`, password: '123', role: 'student' });
+  const student2 = await User.create({ name: 'Student 2', email: `gap_st2_${ts}@t.c`, password: '123', role: 'student' });
+  const mentor = await User.create({ name: 'Mentor', email: `gap_m_${ts}@t.c`, password: '123', role: 'faculty_mentor' });
+  const clubAdmin = await User.create({ name: 'ClubAdmin', email: `gap_ca_${ts}@t.c`, password: '123', role: 'club_admin' });
+  const coord = await User.create({ name: 'Coord', email: `gap_c_${ts}@t.c`, password: '123', role: 'faculty_coordinator' });
 
   // Create Club
-  const club = await Club.create({ name: 'Club 1', description: 'desc', createdBy: coord._id, facultyCoordinatorId: coord._id });
+  const club = await Club.create({ name: `Gap Club ${ts}`, description: 'desc', createdBy: coord._id, facultyCoordinatorId: coord._id });
 
   // Create Projects
-  const proj1 = await Project.create({ name: 'Project 1', description: 'Desc', status: 'active', createdBy: admin._id, teamLeaderId: student._id });
-  const proj2 = await Project.create({ name: 'Project 2', description: 'Desc', status: 'active', createdBy: admin._id });
+  const proj1 = await Project.create({ name: `Gap Project 1 ${ts}`, description: 'Desc', status: 'active', createdBy: admin._id, teamLeaderId: student._id });
+  const proj2 = await Project.create({ name: `Gap Project 2 ${ts}`, description: 'Desc', status: 'active', createdBy: admin._id });
 
   // Add Project Memberships
   await ProjectMembership.create({ projectId: proj1._id, studentId: student._id }); // TL
@@ -85,12 +78,12 @@ async function runTests() {
   console.log('═════════════════════════════════════════════════════════════════');
   
   // 1. Project Admin can retrieve project requests across multiple projects.
-  let pReqs = await JoinRequest.find({ requestType: 'project' });
+  let pReqs = await JoinRequest.find({ _id: { $in: [pReq1._id, pReq2._id] }, requestType: 'project' });
   assert(pReqs.length === 2, '1. Project Admin can retrieve project requests across multiple projects (DB Check).');
   
   // Simulate GET /api/join-requests/project/all manually using logic:
   let allProjReqsAdmin = await JoinRequest.find({ requestType: 'project' });
-  assert(allProjReqsAdmin.length === 2, '1. Project Admin can retrieve project requests across multiple projects.');
+  assert(allProjReqsAdmin.some(r => r._id.equals(pReq1._id)) && allProjReqsAdmin.some(r => r._id.equals(pReq2._id)), '1. Project Admin can retrieve project requests across multiple projects.');
 
   // 2. Club requests are excluded.
   assert(allProjReqsAdmin.every(r => r.requestType === 'project'), '2. Club requests are excluded.');
@@ -111,7 +104,7 @@ async function runTests() {
   console.log('═════════════════════════════════════════════════════════════════');
   
   const allUpdatesAdmin = await ProjectUpdate.find();
-  assert(allUpdatesAdmin.length === 2, '8. Project Admin can retrieve updates across multiple projects.');
+  assert(allUpdatesAdmin.some(u => u.projectId.equals(proj1._id)) && allUpdatesAdmin.some(u => u.projectId.equals(proj2._id)), '8. Project Admin can retrieve updates across multiple projects.');
   assert(reqUser(student).role !== 'project_admin', '9. Non-Project-Admin cannot access global updates.');
   
   const proj1Updates = await ProjectUpdate.find({ projectId: proj1._id });
@@ -172,7 +165,16 @@ async function runTests() {
   } else {
     process.exit(1);
   }
-  
+
+  // Clean up isolated test fixtures
+  await User.deleteMany({ _id: { $in: [admin._id, student._id, student2._id, mentor._id, clubAdmin._id, coord._id] } });
+  await Club.deleteMany({ _id: club._id });
+  await Project.deleteMany({ _id: { $in: [proj1._id, proj2._id] } });
+  await ProjectMembership.deleteMany({ projectId: { $in: [proj1._id, proj2._id] } });
+  await ProjectMentor.deleteMany({ projectId: { $in: [proj1._id, proj2._id] } });
+  await ProjectUpdate.deleteMany({ projectId: { $in: [proj1._id, proj2._id] } });
+  await JoinRequest.deleteMany({ _id: { $in: [pReq1._id, pReq2._id, cReq._id] } });
+
   await mongoose.disconnect();
 }
 

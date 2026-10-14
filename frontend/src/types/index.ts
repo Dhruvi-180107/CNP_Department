@@ -6,6 +6,7 @@ export interface User {
   role: string;
   department?: string;
   universityId?: string;
+  enrollmentNumber?: string;
   phone?: string;
   bio?: string;
   profileImage?: string;
@@ -17,6 +18,12 @@ export interface Club {
   name: string;
   description: string;
   facultyCoordinatorId?: string | { _id: string; name: string };
+  logo?: string;
+  images?: string[];
+  totalMembers?: number;
+  memberCount?: number;
+  coreTeamCount?: number;
+  regularMemberCount?: number;
 }
 
 export interface Project {

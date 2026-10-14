@@ -6,7 +6,7 @@ import connectDB from './config/db.js';
 import healthRoutes from './routes/healthRoutes.js';
 import authRoutes from './src/routes/authRoutes.js';
 import userRoutes from './src/routes/userRoutes.js';
-import clubRoutes from './src/routes/clubRoutes.js';
+import clubRoutes, { coordinatorRouter } from './src/routes/clubRoutes.js';
 import projectRoutes from './src/routes/projectRoutes.js';
 import { clubJoinRouter, projectJoinRouter, joinRequestRouter } from './src/routes/joinRequestRoutes.js';
 import { projectMentorRouter, mentorRouter } from './src/routes/projectMentorRoutes.js';
@@ -17,6 +17,7 @@ import inventoryRoutes from './src/routes/inventoryRoutes.js';
 import materialRequestRoutes from './src/routes/materialRequestRoutes.js';
 import allocationRoutes from './src/routes/allocationRoutes.js';
 import notificationRoutes from './src/routes/notificationRoutes.js';
+import { startEventReminderScheduler } from './src/services/eventReminderService.js';
 
 // ─── Validate required environment variables ───────────────────────────────────
 if (!process.env.JWT_SECRET) {
@@ -59,6 +60,7 @@ app.use('/api/projects', projectJoinRouter);   // POST /api/projects/:projectId/
 app.use('/api/join-requests', joinRequestRouter); // GET reviewer/student, PATCH approve/reject
 app.use('/api/projects', projectMentorRouter);    // POST/GET/PATCH/DELETE /api/projects/:id/mentors
 app.use('/api/mentors', mentorRouter);            // GET /api/mentors/:mentorId/projects
+app.use('/api/coordinators', coordinatorRouter);    // GET /api/coordinators/:coordinatorId/clubs
 app.use('/api/projects', projectUpdateRoutes);    // Task 2F: updates + feedback
 app.use('/api/events', eventRoutes);              // Task 2G: events CRUD + upcoming
 app.use('/api/clubs', clubEventsRouter);           // Task 2G: GET /api/clubs/:clubId/events
@@ -76,6 +78,9 @@ app.use((_req, res) => {
 // ─── Start Server ─────────────────────────────────────────────────────────────
 const startServer = async () => {
   await connectDB();
+
+  // Start background 24-hour event reminder scheduler
+  startEventReminderScheduler();
 
   app.listen(PORT, () => {
     console.log(`🚀  Server running on http://localhost:${PORT}`);

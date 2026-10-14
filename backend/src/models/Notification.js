@@ -15,6 +15,13 @@ const NOTIFICATION_TYPES = [
   'project_update',
   'material_request_approved',
   'material_request_rejected',
+  'material_request_submitted',
+  'material_request_created',
+  'material_request',
+  'material_added',
+  'project_material_added',
+  'event_created',
+  'event_reminder',
 ];
 
 const notificationSchema = new mongoose.Schema(
@@ -48,6 +55,128 @@ const notificationSchema = new mongoose.Schema(
     relatedId: {
       type: mongoose.Schema.Types.ObjectId,
       default: null,
+    },
+    // Optional navigation link/route to the relevant page
+    link: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    // Optional label for the primary action button (e.g. 'View Feedback', 'View Materials')
+    actionText: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    // Structured contextual details about the action and related resources
+    metadata: {
+      actorId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null,
+      },
+      actorName: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      projectId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Project',
+        default: null,
+      },
+      projectName: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      clubId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Club',
+        default: null,
+      },
+      clubName: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      entityName: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      quantity: {
+        type: Number,
+        default: null,
+      },
+      reason: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      feedbackText: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      action: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      actorEmail: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      department: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      semester: {
+        type: mongoose.Schema.Types.Mixed,
+        default: null,
+      },
+      status: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      requestDate: {
+        type: Date,
+        default: null,
+      },
+      source: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      hasAttachments: {
+        type: Boolean,
+        default: false,
+      },
+      attachmentCount: {
+        type: Number,
+        default: 0,
+      },
+      creationTime: {
+        type: Date,
+        default: null,
+      },
+      submissionTime: {
+        type: Date,
+        default: null,
+      },
+      eventDate: {
+        type: Date,
+        default: null,
+      },
+      location: {
+        type: String,
+        default: null,
+        trim: true,
+      },
     },
     isRead: {
       type: Boolean,

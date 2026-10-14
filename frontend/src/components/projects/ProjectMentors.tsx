@@ -2,18 +2,34 @@ import { useEffect, useState } from 'react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { UserDisplay } from '../UserDisplay';
+import { UserSelect } from '../UserSelect';
 
-export function ProjectMentors({ projectId }: { projectId: string }) {
+interface ProjectMentorsProps {
+  projectId: string;
+  mentors?: any[];
+  onMentorsChange?: (mentors: any[]) => void;
+}
+
+export function ProjectMentors({ projectId, mentors: propMentors, onMentorsChange }: ProjectMentorsProps) {
   const { user } = useAuth();
-  const [mentors, setMentors] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [mentors, setMentors] = useState<any[]>(propMentors || []);
+  const [loading, setLoading] = useState(!propMentors);
   const [error, setError] = useState('');
-  const [mentorEmail, setMentorEmail] = useState('');
+  const [selectedMentorId, setSelectedMentorId] = useState('');
+
+  useEffect(() => {
+    if (propMentors) {
+      setMentors(propMentors);
+      setLoading(false);
+    }
+  }, [propMentors]);
 
   const loadMentors = () => {
     api<any>('GET', `/projects/${projectId}/mentors`)
       .then(res => {
-        setMentors(res.data);
+        const data = res.data || [];
+        setMentors(data);
+        onMentorsChange?.(data);
       })
       .catch(err => {
         if (err.status !== 403) setError(err.message || 'Failed to load mentors');
@@ -22,22 +38,19 @@ export function ProjectMentors({ projectId }: { projectId: string }) {
   };
 
   useEffect(() => {
-    loadMentors();
+    if (!propMentors) {
+      loadMentors();
+    }
   }, [projectId]);
 
   const handleAddMentor = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedMentorId) return;
     try {
-      const users = await api<any>('GET', '/users').then(res => res.data);
-      const targetUser = users.find((u: any) => u.email === mentorEmail && u.role === 'faculty_mentor');
-      
-      if (!targetUser) {
-        throw new Error('Faculty Mentor not found with that email');
-      }
-
-      await api('POST', `/projects/${projectId}/mentors`, { mentorId: targetUser._id });
-      setMentorEmail('');
+      await api('POST', `/projects/${projectId}/mentors`, { mentorId: selectedMentorId });
+      setSelectedMentorId('');
       loadMentors();
+      alert('Mentor assigned successfully');
     } catch (e: any) {
       alert(e.message || 'Failed to add mentor');
     }
@@ -71,17 +84,27 @@ export function ProjectMentors({ projectId }: { projectId: string }) {
       <div className="card-body" style={{ padding: 0 }}>
         
         {user?.role === 'project_admin' && (
-          <form onSubmit={handleAddMentor} style={{ display: 'flex', gap: '12px', marginBottom: '24px', background: 'var(--bg-card-2)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-            <input 
-              type="email" 
-              className="input" 
-              placeholder="Faculty Mentor Email" 
-              value={mentorEmail} 
-              onChange={e => setMentorEmail(e.target.value)} 
-              required
-              style={{ flex: 1, padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg)' }}
-            />
-            <button type="submit" className="btn btn-primary" style={{ whiteSpace: 'nowrap' }}>Add Mentor</button>
+          <form onSubmit={handleAddMentor} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px', background: 'var(--bg-card-2)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: '280px' }}>
+                <UserSelect
+                  role="faculty_mentor"
+                  value={selectedMentorId}
+                  onChange={setSelectedMentorId}
+                  placeholder="Search and select faculty mentor..."
+                  disabledUserIds={mentors.map(m => (typeof m.mentorId === 'object' ? m.mentorId?._id : m.mentorId)).filter(Boolean)}
+                  disabledReason="Already assigned"
+                />
+              </div>
+              <button 
+                type="submit" 
+                className="btn btn-primary" 
+                disabled={!selectedMentorId}
+                style={{ whiteSpace: 'nowrap', height: '42px', padding: '0 20px', alignSelf: 'flex-start' }}
+              >
+                Add Mentor
+              </button>
+            </div>
           </form>
         )}
 

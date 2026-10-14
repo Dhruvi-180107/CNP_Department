@@ -88,14 +88,24 @@ projectMentorRouter.post(
       await assignment.populate('projectId', 'name status');
 
       // Notify the Faculty Mentor about their assignment
+      const assignerName = req.user.name || 'Project Admin';
       createNotification({
         userId: mentorId,
         type: 'mentor_assigned',
         title: 'Assigned as Project Mentor',
         message: isPrimary
-          ? `You have been assigned as the PRIMARY mentor for project "${project.name}".`
-          : `You have been assigned as a mentor for project "${project.name}".`,
+          ? `You have been assigned as the PRIMARY mentor for project "${project.name}" by ${assignerName}.`
+          : `You have been assigned as a mentor for project "${project.name}" by ${assignerName}.`,
         relatedId: project._id,
+        link: `/projects/${project._id}`,
+        actionText: 'View Project',
+        metadata: {
+          actorId: req.user.userId,
+          actorName: assignerName,
+          projectId: project._id,
+          projectName: project.name,
+          action: 'assigned',
+        },
       }).catch((e) => console.error('[Notification] mentor_assigned:', e.message));
 
       res.status(201).json({
@@ -134,7 +144,7 @@ projectMentorRouter.get('/:projectId/mentors', requireAuth, async (req, res) => 
     }
 
     const mentors = await ProjectMentor.find({ projectId })
-      .populate('mentorId', 'name email role department semester') // Safe fields — no passwords
+      .populate('mentorId', 'name email role department semester profileImage') // Safe fields — no passwords
       .sort({ isPrimary: -1, assignedAt: 1 }); // Primary first, then by assignment order
 
     res.status(200).json({
@@ -333,7 +343,14 @@ mentorRouter.get('/:mentorId/projects', requireAuth, async (req, res) => {
 
     // 3. Find all project assignments for this mentor
     const assignments = await ProjectMentor.find({ mentorId })
-      .populate('projectId', 'name description status createdAt updatedAt')
+      .populate({
+        path: 'projectId',
+        select: 'name description status createdAt updatedAt teamLeaderId image',
+        populate: {
+          path: 'teamLeaderId',
+          select: 'name email role profileImage department semester',
+        },
+      })
       .sort({ isPrimary: -1, assignedAt: 1 });
 
     const projects = assignments.map((a) => ({

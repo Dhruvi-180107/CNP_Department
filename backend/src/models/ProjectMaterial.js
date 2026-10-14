@@ -64,9 +64,28 @@ const projectMaterialSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    specifications: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    documentUrl: {
+      type: String,
+      default: null,
+    },
+    documentPublicId: {
+      type: String,
+      default: null,
+    },
+    documentOriginalName: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true }
 );
+
+projectMaterialSchema.index({ projectId: 1, createdAt: 1 });
 
 const ProjectMaterial = mongoose.model('ProjectMaterial', projectMaterialSchema);
 

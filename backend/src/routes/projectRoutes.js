@@ -98,6 +98,7 @@ router.get('/', requireAuth, async (_req, res) => {
   try {
     const projects = await Project.find()
       .populate('createdBy', 'name email role profileImage department semester')
+      .populate('teamLeaderId', 'name email role profileImage department semester enrollmentNumber')
       .sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -116,10 +117,9 @@ router.get('/:projectId', requireAuth, async (req, res) => {
   try {
     const { projectId } = req.params;
 
-    const project = await Project.findById(projectId).populate(
-      'createdBy',
-      'name email role department semester'
-    );
+    const project = await Project.findById(projectId)
+      .populate('createdBy', 'name email role profileImage department semester')
+      .populate('teamLeaderId', 'name email role profileImage department semester enrollmentNumber');
 
     if (!project) {
       return res.status(404).json({ success: false, message: 'Project not found' });
@@ -251,9 +251,27 @@ router.post(
         return res.status(404).json({ success: false, message: 'Student (User) not found' });
       }
 
+      // Verify user is a student
+      if (student.role !== 'student') {
+        return res.status(400).json({
+          success: false,
+          message: 'Only users with role "student" can be added as project members',
+        });
+      }
+
+      // Check existing membership (duplicate check)
+      const existing = await ProjectMembership.findOne({ studentId, projectId });
+      if (existing) {
+        return res.status(409).json({
+          success: false,
+          message:
+            'This student is already a member of this project. Duplicate membership is not allowed.',
+        });
+      }
+
       const membership = await ProjectMembership.create({ studentId, projectId });
 
-      await membership.populate('studentId', 'name email role profileImage department semester');
+      await membership.populate('studentId', 'name email role profileImage department semester enrollmentNumber');
       await membership.populate('projectId', 'name status');
 
       res.status(201).json({
@@ -330,7 +348,7 @@ router.get('/:projectId/members', requireAuth, async (req, res) => {
     }
 
     const members = await ProjectMembership.find({ projectId })
-      .populate('studentId', 'name email role profileImage department semester') // Safe fields only
+      .populate('studentId', 'name email role profileImage department semester enrollmentNumber') // Safe fields only
       .sort({ joinedAt: 1 });
 
     res.status(200).json({

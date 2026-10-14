@@ -5,6 +5,8 @@ import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { ClubManagement } from '../../components/clubs/ClubManagement';
 import { MemberItem } from '../../components/clubs/MemberItem';
+import { EventCard } from '../../components/events/EventCard';
+import { EventForm } from '../../components/events/EventForm';
 
 export default function ClubDetails() {
   const { id } = useParams();
@@ -14,6 +16,10 @@ export default function ClubDetails() {
   const [club, setClub] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<any[]>([]);
+  const [pastEvents, setPastEvents] = useState<any[]>([]);
+  const [clubEventTab, setClubEventTab] = useState<'upcoming' | 'past'>('upcoming');
+  const [showEventForm, setShowEventForm] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<any>(null);
   const [joinStatus, setJoinStatus] = useState<string>('none');
   const [loading, setLoading] = useState(true);
 
@@ -26,10 +32,20 @@ export default function ClubDetails() {
       const mems = await api<any>('GET', `/clubs/${id}/members`).then(res => res.data);
       setMembers(mems);
 
-      const evts = await api<any>('GET', `/clubs/${id}/events`).then(res => res.data);
-      const now = new Date();
-      const upcoming = evts.filter((e: any) => new Date(e.eventDate || e.date) >= now);
+      const evts = await api<any>('GET', `/clubs/${id}/events`).then(res => res.data).catch(() => []);
+      const now = Date.now();
+      const clubEvts = evts.filter((e: any) => {
+        const eClubId = typeof e.clubId === 'object' ? e.clubId?._id : e.clubId;
+        return !eClubId || eClubId === id;
+      });
+      const upcoming = clubEvts
+        .filter((e: any) => new Date(e.eventDate || e.date).getTime() >= now)
+        .sort((a: any, b: any) => new Date(a.eventDate || a.date).getTime() - new Date(b.eventDate || b.date).getTime());
+      const past = clubEvts
+        .filter((e: any) => new Date(e.eventDate || e.date).getTime() < now)
+        .sort((a: any, b: any) => new Date(b.eventDate || b.date).getTime() - new Date(a.eventDate || a.date).getTime());
       setUpcomingEvents(upcoming);
+      setPastEvents(past);
       
       if (user?.role === 'student') {
         const reqs = await api<any>('GET', '/join-requests/student').then(res => res.data);
@@ -50,6 +66,15 @@ export default function ClubDetails() {
   useEffect(() => {
     loadClubAndMembers();
   }, [id, user, navigate]);
+
+  useEffect(() => {
+    if (!loading && window.location.hash) {
+      setTimeout(() => {
+        const el = document.querySelector(window.location.hash);
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
+  }, [loading]);
 
   const handleJoin = async () => {
     try {
@@ -142,37 +167,108 @@ export default function ClubDetails() {
       {canManage && <ClubManagement club={club} onUpdate={loadClubAndMembers} />}
 
       <div className="card" style={{ marginBottom: '24px' }}>
-        <h3 className="card-title" style={{ marginBottom: '20px' }}>Upcoming Events</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <h3 className="card-title" style={{ margin: 0 }}>Club Events</h3>
+            <span className="badge badge-success">{upcomingEvents.length} upcoming</span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${clubEventTab === 'upcoming' ? 'btn-primary' : 'btn-outline'}`}
+                style={{ padding: '4px 10px', fontSize: '12px' }}
+                onClick={() => setClubEventTab('upcoming')}
+              >
+                Upcoming ({upcomingEvents.length})
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${clubEventTab === 'past' ? 'btn-primary' : 'btn-outline'}`}
+                style={{ padding: '4px 10px', fontSize: '12px' }}
+                onClick={() => setClubEventTab('past')}
+              >
+                Past ({pastEvents.length})
+              </button>
+            </div>
+
+            {canManage && !showEventForm && (
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                onClick={() => {
+                  setEditingEvent(null);
+                  setShowEventForm(true);
+                }}
+              >
+                + Add Event
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="card-body" style={{ padding: 0 }}>
-          {upcomingEvents.length ? (
-            <div style={{ display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-              {upcomingEvents.map(e => (
-                <div key={e._id} style={{ padding: '16px', border: '1px solid var(--border)', borderRadius: '12px', background: 'var(--bg-card-2)' }}>
-                  <div style={{ fontWeight: 600, fontSize: '15px', color: 'var(--text)', marginBottom: '4px' }}>{e.title}</div>
-                  <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px', lineHeight: 1.4 }}>{e.description}</div>
-                  <div style={{ fontSize: '13px', color: 'var(--text-faint)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <span>📅 {new Date(e.eventDate || e.date).toLocaleDateString()}</span>
-                      <span>⏰ {new Date(e.eventDate || e.date).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                    <div>📍 {e.location}</div>
-                    {e.eventLink && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span>🔗</span> <a href={e.eventLink} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>{e.eventLinkName || 'Open Event Link'}</a>
-                      </div>
-                    )}
-                    {e.relatedDocument?.url && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span>📎</span> <a href={e.relatedDocument.url} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>{e.relatedDocumentName || 'Open Related Document'}</a>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
+          {showEventForm ? (
+            <div style={{ marginBottom: '16px' }}>
+              <EventForm
+                clubId={id!}
+                event={editingEvent}
+                onSave={() => {
+                  setShowEventForm(false);
+                  setEditingEvent(null);
+                  loadClubAndMembers();
+                }}
+                onCancel={() => {
+                  setShowEventForm(false);
+                  setEditingEvent(null);
+                }}
+              />
             </div>
           ) : (
-            <div className="empty-state" style={{ padding: '24px', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
-              No upcoming events for this club.
+            <div>
+              {(clubEventTab === 'upcoming' ? upcomingEvents : pastEvents).length > 0 ? (
+                <div style={{ display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
+                  {(clubEventTab === 'upcoming' ? upcomingEvents : pastEvents).map(e => (
+                    <EventCard
+                      key={e._id}
+                      event={{
+                        ...e,
+                        clubId: typeof e.clubId === 'object' && e.clubId ? e.clubId : club,
+                      }}
+                      canManage={canManage}
+                      isPast={clubEventTab === 'past'}
+                      onEdit={evt => {
+                        setEditingEvent(evt);
+                        setShowEventForm(true);
+                      }}
+                      onDelete={async (eventId) => {
+                        if (!window.confirm('Are you sure you want to delete this event?')) return;
+                        try {
+                          await api('DELETE', `/events/${eventId}`);
+                          setUpcomingEvents(prev => prev.filter(x => x._id !== eventId));
+                          setPastEvents(prev => prev.filter(x => x._id !== eventId));
+                        } catch (err: any) {
+                          alert(err.message || 'Failed to delete event');
+                        }
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div
+                  className="empty-state"
+                  style={{
+                    padding: '24px',
+                    border: '1px dashed var(--border)',
+                    borderRadius: '12px',
+                    background: 'var(--surface)',
+                    textAlign: 'center',
+                  }}
+                >
+                  No {clubEventTab} events for this club.
+                </div>
+              )}
             </div>
           )}
         </div>

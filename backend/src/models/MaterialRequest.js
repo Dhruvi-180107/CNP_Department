@@ -30,6 +30,16 @@ const materialRequestSchema = new mongoose.Schema(
       ref: 'GuitarInventory',
       required: [true, 'inventoryItemId is required'],
     },
+    materialName: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    specifications: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     quantity: {
       type: Number,
       required: [true, 'quantity is required'],
@@ -63,9 +73,32 @@ const materialRequestSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    documentUrl: {
+      type: String,
+      default: null,
+    },
+    documentPublicId: {
+      type: String,
+      default: null,
+    },
+    documentOriginalName: {
+      type: String,
+      default: null,
+    },
+    imageUrl: {
+      type: String,
+      default: null,
+    },
+    imagePublicId: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true }
 );
+
+materialRequestSchema.index({ projectId: 1, createdAt: -1 });
+materialRequestSchema.index({ status: 1 });
 
 const MaterialRequest = mongoose.model('MaterialRequest', materialRequestSchema);
 

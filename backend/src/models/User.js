@@ -42,6 +42,11 @@ const userSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    enrollmentNumber: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     semester: {
       type: Number,
       default: null,

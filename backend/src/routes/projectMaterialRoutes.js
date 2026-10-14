@@ -4,10 +4,11 @@ import User from '../models/User.js';
 import ProjectMembership from '../models/ProjectMembership.js';
 import ProjectMentor from '../models/ProjectMentor.js';
 import ProjectMaterial from '../models/ProjectMaterial.js';
+import { createNotifications } from '../services/notificationService.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
-import { uploadImages, getBase64DataURI, handleUploadError } from '../middleware/upload.js';
-import { uploadImage } from '../services/cloudinaryService.js';
+import { uploadMixed, getBase64DataURI, handleUploadError } from '../middleware/upload.js';
+import { uploadImage, uploadRaw } from '../services/cloudinaryService.js';
 
 const router = express.Router();
 
@@ -31,7 +32,9 @@ router.get('/:projectId/materials', requireAuth, async (req, res) => {
       }
     } else if (actingUser.role === 'student') {
       const membership = await ProjectMembership.findOne({ projectId, studentId: actingUser.userId });
-      if (!membership) {
+      const tlId = project.teamLeaderId ? (project.teamLeaderId._id || project.teamLeaderId).toString() : null;
+      const isTL = tlId && tlId === actingUser.userId;
+      if (!membership && !isTL) {
         return res.status(403).json({ success: false, message: 'You are not a member of this project' });
       }
     } else {
@@ -41,6 +44,7 @@ router.get('/:projectId/materials', requireAuth, async (req, res) => {
     const materials = await ProjectMaterial.find({ projectId })
       .populate('addedBy', 'name email role department semester')
       .populate('inventoryItemId', 'name category')
+      .populate('materialRequestId', 'specifications reason documentUrl documentOriginalName imageUrl')
       .sort({ createdAt: 1 });
 
     res.status(200).json({
@@ -50,6 +54,9 @@ router.get('/:projectId/materials', requireAuth, async (req, res) => {
       data: materials,
     });
   } catch (error) {
+    if (error.name === 'CastError') {
+      return res.status(400).json({ success: false, message: 'Invalid project ID format' });
+    }
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -152,12 +159,16 @@ router.patch(
 router.post(
   '/:projectId/materials',
   requireAuth,
-  uploadImages.single('image'),
+  uploadMixed.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'document', maxCount: 1 },
+    { name: 'referenceFile', maxCount: 1 },
+  ]),
   handleUploadError,
   async (req, res) => {
     try {
       const { projectId } = req.params;
-      const { name, quantity, source } = req.body;
+      const { name, quantity, source, specifications } = req.body;
       const actingUserId = req.user.userId;
 
       if (req.user.role !== 'student') {
@@ -194,11 +205,34 @@ router.post(
       let imageUrl = null;
       let imagePublicId = null;
 
-      if (req.file) {
-        const fileUri = getBase64DataURI(req.file);
+      const imgFile = req.files?.image?.[0] || req.file;
+      if (imgFile) {
+        const fileUri = getBase64DataURI(imgFile);
         const result = await uploadImage(fileUri, { folder: 'cnp/materials' });
         imageUrl = result.secure_url;
         imagePublicId = result.public_id;
+      }
+
+      let documentUrl = null;
+      let documentPublicId = null;
+      let documentOriginalName = null;
+
+      const docFile = req.files?.document?.[0] || req.files?.referenceFile?.[0];
+      if (docFile) {
+        const fileUri = getBase64DataURI(docFile);
+        let uploadResult;
+        if (docFile.mimetype.startsWith('image/')) {
+          uploadResult = await uploadImage(fileUri, { folder: 'cnp/materials' });
+        } else {
+          uploadResult = await uploadRaw(fileUri, {
+            folder: 'cnp/materials',
+            originalName: docFile.originalname,
+            mimeType: docFile.mimetype,
+          });
+        }
+        documentUrl = uploadResult.secure_url;
+        documentPublicId = uploadResult.public_id;
+        documentOriginalName = docFile.originalname;
       }
 
       const material = await ProjectMaterial.create({
@@ -207,9 +241,97 @@ router.post(
         quantity: qty,
         source,
         addedBy: actingUserId,
+        specifications: specifications ? specifications.trim() : '',
         image: imageUrl,
         imagePublicId: imagePublicId,
+        documentUrl: documentUrl,
+        documentPublicId: documentPublicId,
+        documentOriginalName: documentOriginalName,
       });
+
+      await material.populate('addedBy', 'name email role department semester');
+
+      // Notify Assigned Faculty Mentor(s) and Project Admin(s) that a new material was added
+      try {
+        const sourceLabel = source === 'self_purchased' ? 'Self-purchased' : 'Owned';
+        const actorName = material.addedBy?.name || req.user.name || 'Team Leader';
+        const actorEmail = material.addedBy?.email || req.user.email || null;
+        const actorDept = material.addedBy?.department || req.user.department || null;
+        const actorSem = material.addedBy?.semester || req.user.semester || null;
+
+        const notificationsToSend = [];
+        const recipientUserIds = new Set();
+
+        // 1. Notify all currently assigned Faculty Mentors for this specific project
+        const mentorAssignments = await ProjectMentor.find({ projectId }).select('mentorId');
+        for (const assignment of mentorAssignments) {
+          const mId = assignment.mentorId?.toString();
+          if (mId && mId !== actingUserId.toString() && !recipientUserIds.has(mId)) {
+            recipientUserIds.add(mId);
+            notificationsToSend.push({
+              userId: assignment.mentorId,
+              type: 'material_added',
+              title: 'New Project Material Added',
+              message: `Team Leader ${actorName} added ${qty}x "${material.name}" (${sourceLabel}) to project "${project.name}".`,
+              relatedId: material._id,
+              link: `/projects/${project._id}`,
+              actionText: 'View Materials',
+              metadata: {
+                actorId: req.user.userId,
+                actorName,
+                actorEmail,
+                department: actorDept,
+                semester: actorSem,
+                projectId: project._id,
+                projectName: project.name,
+                entityName: material.name,
+                quantity: qty,
+                source,
+                action: 'material_added',
+                creationTime: material.createdAt,
+              },
+            });
+          }
+        }
+
+        // 2. Notify all Project Admins (Guitar) across all projects
+        const projectAdmins = await User.find({ role: 'project_admin' }).select('_id');
+        for (const admin of projectAdmins) {
+          const aId = admin._id?.toString();
+          if (aId && aId !== actingUserId.toString() && !recipientUserIds.has(aId)) {
+            recipientUserIds.add(aId);
+            notificationsToSend.push({
+              userId: admin._id,
+              type: 'material_added',
+              title: 'New Project Material Added',
+              message: `Team Leader ${actorName} added ${qty}x "${material.name}" (${sourceLabel}) to project "${project.name}".`,
+              relatedId: material._id,
+              link: `/projects/${project._id}`,
+              actionText: 'View Materials',
+              metadata: {
+                actorId: req.user.userId,
+                actorName,
+                actorEmail,
+                department: actorDept,
+                semester: actorSem,
+                projectId: project._id,
+                projectName: project.name,
+                entityName: material.name,
+                quantity: qty,
+                source,
+                action: 'material_added',
+                creationTime: material.createdAt,
+              },
+            });
+          }
+        }
+
+        if (notificationsToSend.length > 0) {
+          await createNotifications(notificationsToSend);
+        }
+      } catch (notifErr) {
+        console.error('[Notification] material_added error:', notifErr.message);
+      }
 
       res.status(201).json({
         success: true,

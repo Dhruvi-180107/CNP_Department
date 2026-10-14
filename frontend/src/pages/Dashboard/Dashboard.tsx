@@ -3,6 +3,10 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
 import { UserDisplay } from '../../components/UserDisplay';
+import { StudentClubCard } from '../../components/clubs/StudentClubCard';
+import { StudentProjectCard } from '../../components/projects/StudentProjectCard';
+import { EventCard } from '../../components/events/EventCard';
+import { EventForm } from '../../components/events/EventForm';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -12,11 +16,16 @@ export default function Dashboard() {
   const [myClubs, setMyClubs] = useState<any[]>([]);
   const [myProjects, setMyProjects] = useState<any[]>([]);
   
-  // FC State
-  const [assignedClub, setAssignedClub] = useState<any>(null);
+  // FC & Club Admin State
+  const [coordinatorClubs, setCoordinatorClubs] = useState<any[]>([]);
+  const [coordinatorError, setCoordinatorError] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<any[]>([]);
-  const [clubMembers, setClubMembers] = useState<any[]>([]);
+  const [pastEvents, setPastEvents] = useState<any[]>([]);
+  const [eventTab, setEventTab] = useState<'upcoming' | 'past'>('upcoming');
+  const [showEventForm, setShowEventForm] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<any>(null);
+  const [allClubsList, setAllClubsList] = useState<any[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   // FM State
   const [mentorProjects, setMentorProjects] = useState<any[]>([]);
@@ -31,56 +40,101 @@ export default function Dashboard() {
 
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const load = async () => {
+  const load = async () => {
       try {
         if (user?.role === 'student') {
-          const [clubs, projects] = await Promise.all([
+          const [clubs, projectMemberships] = await Promise.all([
             api<any>('GET', '/clubs').then(res => res.data),
-            api<any>('GET', `/users/${user._id}/projects`).then(res => res.data.map((d: any) => d.project))
+            api<any>('GET', `/users/${user._id}/projects`).then(res => res.data).catch(() => [])
           ]);
           
           const memberships = [];
           for (const c of clubs) {
-            const mems = await api<any>('GET', `/clubs/${c._id}/members`).then(res => res.data);
-            const me = mems.find((m: any) => m.studentId._id === user._id);
+            const mems = await api<any>('GET', `/clubs/${c._id}/members`).then(res => res.data).catch(() => []);
+            const me = mems.find((m: any) => (m.studentId?._id || m.studentId) === user._id);
             if (me) memberships.push({ club: c, membership: me });
           }
           setMyClubs(memberships);
-          setMyProjects(projects);
-        } else if (user?.role === 'faculty_coordinator') {
-          const allClubs = await api<any>('GET', '/clubs').then(res => res.data);
-          const fcClub = allClubs.find((c: any) => 
-            (typeof c.facultyCoordinatorId === 'object' ? c.facultyCoordinatorId?._id : c.facultyCoordinatorId) === user._id
-          );
-          setAssignedClub(fcClub);
 
-          if (fcClub) {
-            const [reqs, evts, mems] = await Promise.all([
-              api<any>('GET', `/join-requests/club/${fcClub._id}`).then(res => res.data),
-              api<any>('GET', `/events/upcoming`).then(res => res.data.filter((e: any) => e.clubId?._id === fcClub._id || e.clubId === fcClub._id)),
-              api<any>('GET', `/clubs/${fcClub._id}/members`).then(res => res.data).catch(() => [])
-            ]);
-            setPendingRequests(reqs.filter((r: any) => r.status === 'pending'));
-            setUpcomingEvents(evts);
-            setClubMembers(mems);
+          // For each project, fetch its assigned faculty mentors
+          const projectsWithMentors = await Promise.all(
+            (projectMemberships || []).map(async (item: any) => {
+              const p = item.project;
+              if (!p) return null;
+              try {
+                const mentorsRes = await api<any>('GET', `/projects/${p._id}/mentors`);
+                return { ...p, mentors: mentorsRes.data || [] };
+              } catch {
+                return { ...p, mentors: [] };
+              }
+            })
+          );
+          setMyProjects(projectsWithMentors.filter(Boolean));
+        } else if (user?.role === 'faculty_coordinator') {
+          setCoordinatorError(null);
+          let assignedClubs: any[] = [];
+          try {
+            const res = await api<any>('GET', `/clubs?coordinatorId=${user._id}`);
+            assignedClubs = res.data || [];
+          } catch (err: any) {
+            console.error('Failed to load coordinator clubs:', err);
+            setCoordinatorError(err.message || 'Failed to load assigned clubs.');
+            assignedClubs = [];
           }
-          
-          const notifs = await api<any>('GET', '/notifications').then(res => res.data);
+          setCoordinatorClubs(assignedClubs);
+          setAllClubsList(assignedClubs);
+
+          const reqPromises = assignedClubs.map((c: any) =>
+            api<any>('GET', `/join-requests/club/${c._id}`).then(res => res.data).catch(() => [])
+          );
+
+          const [reqResults, allEvts, notifs] = await Promise.all([
+            Promise.all(reqPromises),
+            api<any>('GET', '/events').then(res => res.data).catch(() => []),
+            api<any>('GET', '/notifications').then(res => res.data).catch(() => [])
+          ]);
+
+          const allPendingReqs = reqResults.flat().filter((r: any) => r.status === 'pending');
+          setPendingRequests(allPendingReqs);
+
+          const now = Date.now();
+          const upcoming = allEvts
+            .filter((e: any) => new Date(e.eventDate || e.date).getTime() >= now)
+            .sort((a: any, b: any) => new Date(a.eventDate || a.date).getTime() - new Date(b.eventDate || b.date).getTime());
+          const past = allEvts
+            .filter((e: any) => new Date(e.eventDate || e.date).getTime() < now)
+            .sort((a: any, b: any) => new Date(b.eventDate || b.date).getTime() - new Date(a.eventDate || a.date).getTime());
+
+          setUpcomingEvents(upcoming);
+          setPastEvents(past);
           setUnreadNotifications(notifs.filter((n: any) => !n.isRead).length);
 
         } else if (user?.role === 'club_admin') {
-          const allClubs = await api<any>('GET', '/clubs').then(res => res.data);
-          const notifs = await api<any>('GET', '/notifications').then(res => res.data);
-          const reqs = await api<any>('GET', '/join-requests/club/all').then(res => res.data).catch(() => []);
-          
+          const [allClubs, notifs, reqs, allEvts] = await Promise.all([
+            api<any>('GET', '/clubs').then(res => res.data).catch(() => []),
+            api<any>('GET', '/notifications').then(res => res.data).catch(() => []),
+            api<any>('GET', '/join-requests/club/all').then(res => res.data).catch(() => []),
+            api<any>('GET', '/events').then(res => res.data).catch(() => [])
+          ]);
+          setAllClubsList(allClubs);
+
           setClubAdminRequests(reqs.filter((r: any) => r.status === 'pending'));
-          
           setClubAdminStats({
             totalClubs: allClubs.length,
             withCoordinator: allClubs.filter((c: any) => c.facultyCoordinatorId).length,
             withoutCoordinator: allClubs.filter((c: any) => !c.facultyCoordinatorId).length,
           });
+
+          const now = Date.now();
+          const upcoming = allEvts
+            .filter((e: any) => new Date(e.eventDate || e.date).getTime() >= now)
+            .sort((a: any, b: any) => new Date(a.eventDate || a.date).getTime() - new Date(b.eventDate || b.date).getTime());
+          const past = allEvts
+            .filter((e: any) => new Date(e.eventDate || e.date).getTime() < now)
+            .sort((a: any, b: any) => new Date(b.eventDate || b.date).getTime() - new Date(a.eventDate || a.date).getTime());
+
+          setUpcomingEvents(upcoming);
+          setPastEvents(past);
           setUnreadNotifications(notifs.filter((n: any) => !n.isRead).length);
         } else if (user?.role === 'faculty_mentor') {
           const mProjects = await api<any>('GET', `/mentors/${user._id}/projects`).then(res => res.data);
@@ -114,7 +168,9 @@ export default function Dashboard() {
       } finally {
         setLoading(false);
       }
-    };
+  };
+
+  useEffect(() => {
     load();
   }, [user]);
 
@@ -126,167 +182,481 @@ export default function Dashboard() {
       <p className="section-sub">Welcome back, {user?.name} ({user?.role})</p>
       
       {user?.role === 'student' && (
-        <div className="dashboard-grid">
-          <div className="card">
-            <div className="card-header">
-              <h3 className="card-title">Club Memberships</h3>
-              <span className="badge badge-primary">{myClubs.length}</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '36px' }}>
+          {/* Clubs Section */}
+          <section className="student-dashboard-section">
+            <div className="student-dashboard-section-header">
+              <div className="student-dashboard-section-title-wrap">
+                <h3 className="student-section-title">
+                  <span>🏛</span> Clubs
+                </h3>
+                <span className="badge badge-primary">{myClubs.length}</span>
+              </div>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => navigate('/clubs')}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+              >
+                Explore Clubs &rarr;
+              </button>
             </div>
-            <div className="card-body" style={{ padding: 0 }}>
-              {myClubs.length ? myClubs.map(mc => (
-                <div key={mc.club._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    {mc.club.logo ? <img src={mc.club.logo} alt={mc.club.name} style={{ width: '40px', height: '40px', borderRadius: '10px', objectFit: 'cover' }} /> : <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>🏛</div>}
-                    <div>
-                      <div style={{ fontWeight: 600, color: 'var(--text)' }}>{mc.club.name}</div>
-                      <div style={{ fontSize: '13px', color: 'var(--text-faint)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: mc.membership.membershipType === 'core_team' ? 'var(--warn)' : 'var(--success)' }}></span>
-                        {mc.membership.membershipType === 'core_team' ? `Core Team (${mc.membership.position || 'Member'})` : 'Member'}
-                      </div>
-                    </div>
-                  </div>
-                  <button className="btn btn-sm btn-outline" onClick={() => navigate(`/clubs/${mc.club._id}`)}>View</button>
+
+            {myClubs.length > 0 ? (
+              <div className="student-cards-grid">
+                {myClubs.map(mc => (
+                  <StudentClubCard
+                    key={mc.club._id}
+                    club={mc.club}
+                    membership={mc.membership}
+                    onClick={() => navigate(`/clubs/${mc.club._id}`)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="card empty-state" style={{ padding: '48px 24px', textAlign: 'center' }}>
+                <div style={{ fontSize: '36px', marginBottom: '10px' }}>🏛</div>
+                <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: '15px', marginBottom: '6px' }}>
+                  Not a member of any clubs yet
                 </div>
-              )) : <div className="empty-state" style={{ padding: '32px' }}>Not a member of any clubs yet.</div>}
+                <p style={{ fontSize: '13px', color: 'var(--text-faint)', maxWidth: '420px', margin: '0 auto 18px auto' }}>
+                  Explore student clubs to collaborate, build projects, and participate in technical and cultural events.
+                </p>
+                <button className="btn btn-primary btn-sm" onClick={() => navigate('/clubs')}>
+                  Explore Clubs
+                </button>
+              </div>
+            )}
+          </section>
+
+          {/* Projects Section */}
+          <section className="student-dashboard-section">
+            <div className="student-dashboard-section-header">
+              <div className="student-dashboard-section-title-wrap">
+                <h3 className="student-section-title">
+                  <span>📋</span> Projects
+                </h3>
+                <span className="badge badge-primary">{myProjects.length}</span>
+              </div>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => navigate('/projects')}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+              >
+                Explore Projects &rarr;
+              </button>
             </div>
-          </div>
-          
-          <div className="card">
-            <div className="card-header">
-              <h3 className="card-title">Project Memberships</h3>
-              <span className="badge badge-primary">{myProjects.length}</span>
-            </div>
-            <div className="card-body" style={{ padding: 0 }}>
-              {myProjects.length ? myProjects.map(p => {
-                const isTL = typeof p.teamLeaderId === 'object' ? p.teamLeaderId?._id === user._id : p.teamLeaderId === user._id;
-                return (
-                <div key={p._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    {p.image ? <img src={p.image} alt={p.name} style={{ width: '40px', height: '40px', borderRadius: '10px', objectFit: 'cover' }} /> : <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>📋</div>}
-                    <div>
-                      <div style={{ fontWeight: 600, color: 'var(--text)' }}>{p.name}</div>
-                      <div style={{ fontSize: '13px', color: 'var(--text-faint)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span className={`badge ${p.status === 'active' ? 'badge-success' : 'badge-student'}`} style={{ padding: '2px 6px', fontSize: '10px' }}>{p.status}</span>
-                        {isTL ? <span style={{ color: 'var(--warn)', fontWeight: 500 }}>Team Leader</span> : <span>Member</span>}
-                      </div>
-                    </div>
-                  </div>
-                  <button className="btn btn-sm btn-outline" onClick={() => navigate(`/projects/${p._id}`)}>View</button>
+
+            {myProjects.length > 0 ? (
+              <div className="student-cards-grid">
+                {myProjects.map(p => (
+                  <StudentProjectCard
+                    key={p._id}
+                    project={p}
+                    currentUserId={user._id}
+                    onClick={() => navigate(`/projects/${p._id}`)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="card empty-state" style={{ padding: '48px 24px', textAlign: 'center' }}>
+                <div style={{ fontSize: '36px', marginBottom: '10px' }}>📋</div>
+                <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: '15px', marginBottom: '6px' }}>
+                  Not assigned to any projects yet
                 </div>
-              )
-              }) : <div className="empty-state" style={{ padding: '32px' }}>Not assigned to any projects yet.</div>}
-            </div>
-          </div>
+                <p style={{ fontSize: '13px', color: 'var(--text-faint)', maxWidth: '420px', margin: '0 auto 18px auto' }}>
+                  Get assigned to department hardware and software projects to collaborate with faculty mentors and peer team members.
+                </p>
+                <button className="btn btn-primary btn-sm" onClick={() => navigate('/projects')}>
+                  Explore Projects
+                </button>
+              </div>
+            )}
+          </section>
         </div>
       )}
 
       {user?.role === 'faculty_coordinator' && (
         <div className="dashboard-grid">
-          <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+          {/* Assigned Clubs Section (Multi-Card Grid, matching Faculty Mentor layout) */}
+          <div className="card" style={{ gridColumn: '1 / -1' }}>
             <div className="card-header" style={{ marginBottom: '16px' }}>
-              <h3 className="card-title">Assigned Club</h3>
+              <h3 className="card-title">Assigned Clubs</h3>
+              <span className="badge badge-primary">{coordinatorClubs.length}</span>
             </div>
-            <div className="card-body" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-              {assignedClub ? (
-                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div style={{ display: 'flex', gap: '24px', alignItems: 'center', marginBottom: '24px' }}>
-                    {assignedClub.logo ? (
-                      <img src={assignedClub.logo} style={{ width: '64px', height: '64px', borderRadius: '12px', objectFit: 'cover' }} />
-                    ) : (
-                      <div style={{ width: '64px', height: '64px', borderRadius: '12px', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>🏛</div>
-                    )}
-                    <div style={{ flex: 1 }}>
-                      <h3 style={{ margin: '0 0 6px 0', fontSize: '20px', color: 'var(--text)' }}>{assignedClub.name}</h3>
-                      <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-faint)', lineHeight: 1.5 }}>{assignedClub.description}</p>
-                    </div>
-                  </div>
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '24px' }}>
-                    <div style={{ background: 'var(--bg-card-2)', border: '1px solid var(--border)', padding: '16px', borderRadius: '12px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text)', marginBottom: '4px' }}>{clubMembers.filter(m => m.membershipType !== 'core_team').length}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-faint)' }}>Total Members</div>
-                    </div>
-                    <div style={{ background: 'var(--bg-card-2)', border: '1px solid var(--warn-soft)', padding: '16px', borderRadius: '12px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--warn)', marginBottom: '4px' }}>{clubMembers.filter(m => m.membershipType === 'core_team').length}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-faint)' }}>Core Team</div>
-                    </div>
-                  </div>
+            <div className="card-body" style={{ padding: 0 }}>
+              {coordinatorError ? (
+                <div
+                  className="empty-state"
+                  style={{
+                    padding: '32px',
+                    color: 'var(--danger, #ef4444)',
+                    background: 'var(--surface)',
+                    borderRadius: '12px',
+                    border: '1px dashed var(--border)',
+                    textAlign: 'center'
+                  }}
+                >
+                  {coordinatorError}
+                </div>
+              ) : coordinatorClubs.length > 0 ? (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+                    gap: '20px'
+                  }}
+                >
+                  {coordinatorClubs.map(club => (
+                    <div
+                      key={club._id}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        padding: '20px',
+                        border: '1px solid var(--border)',
+                        borderRadius: '12px',
+                        background: 'var(--bg-card-2)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', marginBottom: '16px' }}>
+                        {club.logo ? (
+                          <img
+                            src={club.logo}
+                            alt={club.name}
+                            style={{
+                              width: '56px',
+                              height: '56px',
+                              borderRadius: '12px',
+                              objectFit: 'cover',
+                              flexShrink: 0
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: '56px',
+                              height: '56px',
+                              borderRadius: '12px',
+                              background: 'var(--bg)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '24px',
+                              flexShrink: 0
+                            }}
+                          >
+                            🏛
+                          </div>
+                        )}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <h4
+                            style={{
+                              margin: '0 0 6px 0',
+                              fontSize: '18px',
+                              fontWeight: 600,
+                              color: 'var(--text)',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis'
+                            }}
+                          >
+                            {club.name}
+                          </h4>
+                          <p
+                            style={{
+                              margin: 0,
+                              fontSize: '13px',
+                              color: 'var(--text-faint)',
+                              lineHeight: 1.4,
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden'
+                            }}
+                          >
+                            {club.description || 'No description provided.'}
+                          </p>
+                        </div>
+                      </div>
 
-                  <div style={{ marginTop: 'auto' }}>
-                    <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => navigate(`/clubs/${assignedClub._id}`)}>Manage Club</button>
-                  </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+                        <div
+                          style={{
+                            background: 'var(--surface)',
+                            border: '1px solid var(--border)',
+                            padding: '14px 12px',
+                            borderRadius: '10px',
+                            textAlign: 'center'
+                          }}
+                        >
+                          <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text)', marginBottom: '4px' }}>
+                            {club.totalMembers ?? club.memberCount ?? 0}
+                          </div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
+                            Total Members
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            background: 'var(--surface)',
+                            border: '1px solid var(--warn-soft)',
+                            padding: '14px 12px',
+                            borderRadius: '10px',
+                            textAlign: 'center'
+                          }}
+                        >
+                          <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--warn)', marginBottom: '4px' }}>
+                            {club.coreTeamCount ?? 0}
+                          </div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
+                            Core Team
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ marginTop: 'auto' }}>
+                        <button
+                          className="btn btn-primary"
+                          style={{ width: '100%' }}
+                          onClick={() => navigate(`/clubs/${club._id}`)}
+                        >
+                          Manage Club
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : (
-                <div className="empty-state" style={{ margin: 'auto', width: '100%' }}>You are not assigned to any club.</div>
+                <div
+                  className="empty-state"
+                  style={{
+                    padding: '40px',
+                    background: 'var(--surface)',
+                    borderRadius: '12px',
+                    border: '1px dashed var(--border)',
+                    textAlign: 'center'
+                  }}
+                >
+                  No clubs assigned yet.
+                </div>
               )}
             </div>
           </div>
-          
+
+          {/* Pending Join Requests */}
           <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
             <div className="card-header" style={{ marginBottom: '16px' }}>
               <h3 className="card-title">Pending Join Requests</h3>
-              {assignedClub && pendingRequests.length > 0 && <span className="badge badge-student" style={{ background: 'var(--warn-soft)', color: 'var(--warn)' }}>{pendingRequests.length}</span>}
+              {coordinatorClubs.length > 0 && pendingRequests.length > 0 && (
+                <span className="badge badge-student" style={{ background: 'var(--warn-soft)', color: 'var(--warn)' }}>
+                  {pendingRequests.length}
+                </span>
+              )}
             </div>
             <div className="card-body" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-              {assignedClub ? (
+              {coordinatorClubs.length > 0 ? (
                 pendingRequests.length ? (
                   <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                     <div style={{ display: 'grid', gap: '12px', marginBottom: '20px' }}>
                       {pendingRequests.slice(0, 3).map(r => (
-                        <div key={r._id} style={{ border: '1px solid var(--border)', padding: '12px 16px', borderRadius: '8px', fontSize: '14px', background: 'var(--bg-card-2)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--warn)' }}></div>
-                          {r.studentId ? <UserDisplay user={r.studentId} showEmail={false} /> : <div style={{ fontWeight: 500 }}>Unknown Student</div>}
+                        <div
+                          key={r._id}
+                          style={{
+                            border: '1px solid var(--border)',
+                            padding: '12px 16px',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            background: 'var(--bg-card-2)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '12px'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--warn)', flexShrink: 0 }}></div>
+                            <div>
+                              {r.studentId ? <UserDisplay user={r.studentId} showEmail={false} /> : <div style={{ fontWeight: 500 }}>Unknown Student</div>}
+                              <div style={{ fontSize: '12px', color: 'var(--text-faint)' }}>
+                                Club: {r.clubId?.name || (coordinatorClubs.find(c => c._id === (typeof r.clubId === 'object' ? r.clubId?._id : r.clubId))?.name) || 'Assigned Club'}
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            className="btn btn-sm btn-outline"
+                            onClick={() => navigate(`/clubs/${typeof r.clubId === 'object' ? r.clubId?._id : r.clubId}`)}
+                          >
+                            Review
+                          </button>
                         </div>
                       ))}
-                      {pendingRequests.length > 3 && <div style={{ fontSize: '12px', color: 'var(--text-faint)', textAlign: 'center', marginTop: '8px', fontStyle: 'italic' }}>+ {pendingRequests.length - 3} more pending requests</div>}
+                      {pendingRequests.length > 3 && (
+                        <div style={{ fontSize: '12px', color: 'var(--text-faint)', textAlign: 'center', marginTop: '8px', fontStyle: 'italic' }}>
+                          + {pendingRequests.length - 3} more pending requests
+                        </div>
+                      )}
                     </div>
                     <div style={{ marginTop: 'auto' }}>
-                      <button className="btn btn-outline" style={{ width: '100%' }} onClick={() => navigate(`/clubs/${assignedClub._id}`)}>Review Requests</button>
+                      <button
+                        className="btn btn-outline"
+                        style={{ width: '100%' }}
+                        onClick={() => {
+                          const targetClubId = (typeof pendingRequests[0]?.clubId === 'object' ? pendingRequests[0]?.clubId?._id : pendingRequests[0]?.clubId) || coordinatorClubs[0]?._id;
+                          navigate(`/clubs/${targetClubId}`);
+                        }}
+                      >
+                        Review Requests
+                      </button>
                     </div>
                   </div>
-                ) : <div className="empty-state" style={{ margin: 'auto', width: '100%' }}>No pending requests.</div>
-              ) : <div className="empty-state" style={{ margin: 'auto', width: '100%' }}>—</div>}
+                ) : (
+                  <div className="empty-state" style={{ margin: 'auto', width: '100%' }}>No pending requests.</div>
+                )
+              ) : (
+                <div className="empty-state" style={{ margin: 'auto', width: '100%' }}>No clubs assigned yet.</div>
+              )}
             </div>
           </div>
 
+          {/* University Events */}
           <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
-            <div className="card-header" style={{ marginBottom: '16px' }}>
-              <h3 className="card-title">Upcoming Events</h3>
-              {assignedClub && upcomingEvents.length > 0 && <span className="badge badge-success">{upcomingEvents.length}</span>}
+            <div className="card-header" style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h3 className="card-title" style={{ margin: 0 }}>University Events</h3>
+                <span className="badge badge-success">{upcomingEvents.length} upcoming</span>
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${eventTab === 'upcoming' ? 'btn-primary' : 'btn-outline'}`}
+                  style={{ padding: '4px 8px', fontSize: '12px' }}
+                  onClick={() => setEventTab('upcoming')}
+                >
+                  Upcoming ({upcomingEvents.length})
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${eventTab === 'past' ? 'btn-primary' : 'btn-outline'}`}
+                  style={{ padding: '4px 8px', fontSize: '12px' }}
+                  onClick={() => setEventTab('past')}
+                >
+                  Past ({pastEvents.length})
+                </button>
+                {coordinatorClubs.length > 0 && !showEventForm && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline"
+                    style={{ padding: '4px 8px', fontSize: '12px' }}
+                    onClick={() => { setEditingEvent(null); setShowEventForm(true); }}
+                  >
+                    + Add
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="card-body" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-              {assignedClub ? (
-                upcomingEvents.length ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                    <div style={{ display: 'grid', gap: '12px', marginBottom: '20px' }}>
-                      {upcomingEvents.slice(0, 3).map(e => (
-                        <div key={e._id} style={{ border: '1px solid var(--border)', padding: '12px 16px', borderRadius: '8px', background: 'var(--bg-card-2)' }}>
-                          <div style={{ fontWeight: 600, fontSize: '15px', color: 'var(--text)', marginBottom: '4px' }}>{e.title}</div>
-                          <div style={{ fontSize: '12px', color: 'var(--text-faint)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                              <span>📅 {new Date(e.eventDate || e.date).toLocaleDateString()}</span>
-                              <span>📍 {e.location}</span>
-                            </div>
-                            {e.eventLink && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span>🔗</span> <a href={e.eventLink} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>{e.eventLinkName || 'Open Event Link'}</a>
-                              </div>
-                            )}
-                            {e.relatedDocument?.url && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span>📎</span> <a href={e.relatedDocument.url} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>{e.relatedDocumentName || 'Open Related Document'}</a>
-                              </div>
-                            )}
-                          </div>
+
+            <div className="card-body" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 0 }}>
+              {showEventForm ? (
+                <div style={{ padding: '16px' }}>
+                  <EventForm
+                    clubId={editingEvent ? (typeof editingEvent.clubId === 'object' ? editingEvent.clubId?._id : editingEvent.clubId) : coordinatorClubs[0]?._id}
+                    event={editingEvent}
+                    onSave={() => {
+                      setShowEventForm(false);
+                      setEditingEvent(null);
+                      load();
+                    }}
+                    onCancel={() => {
+                      setShowEventForm(false);
+                      setEditingEvent(null);
+                    }}
+                  />
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '16px' }}>
+                  {(eventTab === 'upcoming' ? upcomingEvents : pastEvents).length > 0 ? (
+                    <div style={{ display: 'grid', gap: '14px', marginBottom: '20px' }}>
+                      {(eventTab === 'upcoming' ? upcomingEvents : pastEvents).slice(0, 3).map(e => {
+                        const eClubId = typeof e.clubId === 'object' ? e.clubId?._id : e.clubId;
+                        const canManageEvent = user?.role === 'club_admin' || (user?.role === 'faculty_coordinator' && coordinatorClubs.some(c => c._id === eClubId));
+                        return (
+                          <EventCard
+                            key={e._id}
+                            event={e}
+                            compact
+                            isPast={eventTab === 'past'}
+                            canManage={canManageEvent}
+                            onEdit={evt => {
+                              setEditingEvent(evt);
+                              setShowEventForm(true);
+                            }}
+                            onDelete={async (id) => {
+                              if (!window.confirm('Are you sure you want to delete this event?')) return;
+                              try {
+                                await api('DELETE', `/events/${id}`);
+                                setUpcomingEvents(prev => prev.filter(x => x._id !== id));
+                                setPastEvents(prev => prev.filter(x => x._id !== id));
+                              } catch (err: any) {
+                                alert(err.message || 'Failed to delete event');
+                              }
+                            }}
+                          />
+                        );
+                      })}
+                      {(eventTab === 'upcoming' ? upcomingEvents : pastEvents).length > 3 && (
+                        <div style={{ fontSize: '12px', color: 'var(--text-faint)', textAlign: 'center', fontStyle: 'italic' }}>
+                          + {(eventTab === 'upcoming' ? upcomingEvents : pastEvents).length - 3} more {eventTab} events
                         </div>
-                      ))}
+                      )}
                     </div>
-                    <div style={{ marginTop: 'auto' }}>
-                      <button className="btn btn-outline" style={{ width: '100%' }} onClick={() => navigate('/events')}>Manage Events</button>
+                  ) : (
+                    <div className="empty-state" style={{ margin: 'auto', width: '100%', padding: '32px 16px' }}>
+                      No {eventTab} events scheduled across clubs.
                     </div>
+                  )}
+
+                  <div style={{ marginTop: 'auto', paddingTop: '12px' }}>
+                    <button className="btn btn-outline" style={{ width: '100%' }} onClick={() => navigate('/events')}>
+                      Manage Events
+                    </button>
                   </div>
-                ) : <div className="empty-state" style={{ margin: 'auto', width: '100%' }}>No upcoming events.</div>
-              ) : <div className="empty-state" style={{ margin: 'auto', width: '100%' }}>—</div>}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Profile & Notifications Card */}
+          <div className="card">
+            <div className="card-header" style={{ marginBottom: '16px' }}>
+              <h3 className="card-title">Profile & Notifications</h3>
+            </div>
+            <div className="card-body">
+              <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>Unread Notifications</div>
+                  <div style={{ fontSize: '13px', color: 'var(--text-faint)' }}>Stay updated with administrative alerts</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  {unreadNotifications > 0 && <span className="badge badge-student" style={{ background: 'var(--warn-soft)', color: 'var(--warn)', padding: '6px 12px' }}>{unreadNotifications} New</span>}
+                  <button className="btn btn-sm btn-outline" onClick={() => navigate('/notifications')}>View All</button>
+                </div>
+              </div>
+              
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  {user.profileImage ? (
+                    <img src={user.profileImage} alt={user.name} style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
+                  ) : (
+                    <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--primary-glow)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+                      {user.name.charAt(0)}
+                    </div>
+                  )}
+                  <div>
+                    <UserDisplay user={user} showEmail={false} />
+                  </div>
+                </div>
+                <button className="btn btn-sm btn-outline" onClick={() => navigate('/profile')}>Edit Profile</button>
+              </div>
             </div>
           </div>
         </div>
@@ -436,6 +806,109 @@ export default function Dashboard() {
                   </div>
                 </div>
               ) : <div className="empty-state" style={{ margin: 'auto', width: '100%' }}>No pending requests.</div>}
+            </div>
+          </div>
+
+          <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+            <div className="card-header" style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h3 className="card-title" style={{ margin: 0 }}>University Events</h3>
+                <span className="badge badge-success">{upcomingEvents.length} upcoming</span>
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${eventTab === 'upcoming' ? 'btn-primary' : 'btn-outline'}`}
+                  style={{ padding: '4px 8px', fontSize: '12px' }}
+                  onClick={() => setEventTab('upcoming')}
+                >
+                  Upcoming ({upcomingEvents.length})
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${eventTab === 'past' ? 'btn-primary' : 'btn-outline'}`}
+                  style={{ padding: '4px 8px', fontSize: '12px' }}
+                  onClick={() => setEventTab('past')}
+                >
+                  Past ({pastEvents.length})
+                </button>
+                {!showEventForm && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline"
+                    style={{ padding: '4px 8px', fontSize: '12px' }}
+                    onClick={() => { setEditingEvent(null); setShowEventForm(true); }}
+                  >
+                    + Add
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="card-body" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 0 }}>
+              {showEventForm ? (
+                <div style={{ padding: '16px' }}>
+                  <EventForm
+                    availableClubs={allClubsList}
+                    clubId={editingEvent ? (typeof editingEvent.clubId === 'object' ? editingEvent.clubId?._id : editingEvent.clubId) : undefined}
+                    event={editingEvent}
+                    onSave={() => {
+                      setShowEventForm(false);
+                      setEditingEvent(null);
+                      load();
+                    }}
+                    onCancel={() => {
+                      setShowEventForm(false);
+                      setEditingEvent(null);
+                    }}
+                  />
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '16px' }}>
+                  {(eventTab === 'upcoming' ? upcomingEvents : pastEvents).length > 0 ? (
+                    <div style={{ display: 'grid', gap: '14px', marginBottom: '20px' }}>
+                      {(eventTab === 'upcoming' ? upcomingEvents : pastEvents).slice(0, 3).map(e => (
+                        <EventCard
+                          key={e._id}
+                          event={e}
+                          compact
+                          isPast={eventTab === 'past'}
+                          canManage={true}
+                          onEdit={evt => {
+                            setEditingEvent(evt);
+                            setShowEventForm(true);
+                          }}
+                          onDelete={async (id) => {
+                            if (!window.confirm('Are you sure you want to delete this event?')) return;
+                            try {
+                              await api('DELETE', `/events/${id}`);
+                              setUpcomingEvents(prev => prev.filter(x => x._id !== id));
+                              setPastEvents(prev => prev.filter(x => x._id !== id));
+                            } catch (err: any) {
+                              alert(err.message || 'Failed to delete event');
+                            }
+                          }}
+                        />
+                      ))}
+                      {(eventTab === 'upcoming' ? upcomingEvents : pastEvents).length > 3 && (
+                        <div style={{ fontSize: '12px', color: 'var(--text-faint)', textAlign: 'center', fontStyle: 'italic' }}>
+                          + {(eventTab === 'upcoming' ? upcomingEvents : pastEvents).length - 3} more {eventTab} events
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="empty-state" style={{ margin: 'auto', width: '100%', padding: '32px 16px' }}>
+                      No {eventTab} events scheduled across clubs.
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 'auto', paddingTop: '12px' }}>
+                    <button className="btn btn-outline" style={{ width: '100%' }} onClick={() => navigate('/events')}>
+                      Manage Events
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

@@ -6,14 +6,23 @@ interface UserDisplayProps {
   showEmail?: boolean;
   showDepartment?: boolean;
   showSemester?: boolean;
+  showEnrollmentNumber?: boolean;
 }
 
-export function UserDisplay({ user, showRole = false, showEmail = true, showDepartment = true, showSemester = true }: UserDisplayProps) {
+export function UserDisplay({
+  user,
+  showRole = false,
+  showEmail = true,
+  showDepartment = true,
+  showSemester = true,
+  showEnrollmentNumber = true,
+}: UserDisplayProps) {
   if (!user || !user.name) return <span>Unknown User</span>;
 
   const isStudent = user.role === 'student';
   const shouldShowDept = showDepartment && user.department;
   const shouldShowSem = showSemester && isStudent && user.semester;
+  const shouldShowEnr = showEnrollmentNumber && isStudent && user.enrollmentNumber;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -32,8 +41,10 @@ export function UserDisplay({ user, showRole = false, showEmail = true, showDepa
         </a>
       )}
       
-      {(shouldShowDept || shouldShowSem) && (
+      {(shouldShowEnr || shouldShowDept || shouldShowSem) && (
         <div style={{ fontSize: '13px', color: 'var(--text-faint)', marginTop: '2px' }}>
+          {shouldShowEnr && <span>Enrollment: {user.enrollmentNumber}</span>}
+          {shouldShowEnr && (shouldShowDept || shouldShowSem) && <span> &middot; </span>}
           {shouldShowDept && <span>{user.department}</span>}
           {shouldShowDept && shouldShowSem && <span> &middot; </span>}
           {shouldShowSem && <span>Semester {user.semester}</span>}

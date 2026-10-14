@@ -8,6 +8,7 @@ import { ProjectForm } from '../../components/projects/ProjectForm';
 export default function Projects() {
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const navigate = useNavigate();
 
@@ -15,15 +16,17 @@ export default function Projects() {
 
   const loadProjects = async () => {
     try {
+      setError(null);
       if (user?.role === 'faculty_mentor') {
         const res = await api<any>('GET', `/mentors/${user._id}/projects`);
-        setProjects(res.data.map((m: any) => m.project));
+        setProjects((res.data || []).map((m: any) => m.project).filter(Boolean));
       } else {
         const res = await api<any>('GET', '/projects');
-        setProjects(res.data);
+        setProjects(res.data || []);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setError(e.message || 'Failed to load projects');
     } finally {
       setLoading(false);
     }
@@ -47,6 +50,12 @@ export default function Projects() {
 
       {showForm && (
         <ProjectForm onSave={() => { setShowForm(false); loadProjects(); }} onCancel={() => setShowForm(false)} />
+      )}
+
+      {error && (
+        <div style={{ color: 'var(--danger)', padding: '16px', background: 'var(--danger-soft)', borderRadius: '8px', border: '1px solid rgba(var(--danger-rgb), 0.2)', marginBottom: '24px' }}>
+          {error}
+        </div>
       )}
 
       {loading ? <div className="spinner" style={{ margin: '40px auto', display: 'block' }}></div> : (

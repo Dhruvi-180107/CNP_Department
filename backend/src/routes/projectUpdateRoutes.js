@@ -32,7 +32,7 @@ import ProjectMembership from '../models/ProjectMembership.js';
 import ProjectMentor  from '../models/ProjectMentor.js';
 import ProjectUpdate  from '../models/ProjectUpdate.js';
 import ProjectFeedback from '../models/ProjectFeedback.js';
-import { createNotifications } from '../services/notificationService.js';
+import { createNotification, createNotifications } from '../services/notificationService.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { uploadMixed, getBase64DataURI, handleUploadError } from '../middleware/upload.js';
 import { uploadImage, uploadRaw } from '../services/cloudinaryService.js';
@@ -77,6 +77,11 @@ async function resolveProjectAccess(user, projectId) {
   if (user.role === 'student') {
     const membership = await ProjectMembership.findOne({ projectId, studentId: user.userId });
     if (membership) return { allowed: true, role: 'student' };
+    const project = await Project.findById(projectId).select('teamLeaderId');
+    const tlId = project?.teamLeaderId ? (project.teamLeaderId._id || project.teamLeaderId).toString() : null;
+    if (tlId && tlId === user.userId) {
+      return { allowed: true, role: 'student' };
+    }
     return {
       allowed: false,
       reason: 'You are not a member of this project',
@@ -203,18 +208,88 @@ router.post(
     await update.populate('studentId', 'name email role profileImage department semester');
     await update.populate('projectId', 'name status');
 
-    // Notify all Faculty Mentors assigned to this project (no duplicates — one per mentor)
-    const mentorAssignments = await ProjectMentor.find({ projectId }).select('mentorId');
-    if (mentorAssignments.length > 0) {
-      createNotifications(
-        mentorAssignments.map((a) => ({
-          userId: a.mentorId,
-          type: 'project_update',
-          title: 'New Project Update',
-          message: `${req.user.name} posted a new update "${update.title}" on project "${project.name}".`,
-          relatedId: update._id,
-        }))
-      ).catch((e) => console.error('[Notification] project_update batch:', e.message));
+    // Notify assigned Faculty Mentors and Project Admins (Guitar) that an update was posted
+    try {
+      const authorName = update.studentId?.name || req.user.name || 'Team Leader';
+      const authorEmail = update.studentId?.email || req.user.email || null;
+      const authorDept = update.studentId?.department || req.user.department || null;
+      const authorSem = update.studentId?.semester || req.user.semester || null;
+      const hasAttachments = uploadedFiles && uploadedFiles.length > 0;
+      const attachmentCount = uploadedFiles ? uploadedFiles.length : 0;
+      const attachmentText = hasAttachments ? ` (with ${attachmentCount} attachment${attachmentCount > 1 ? 's' : ''})` : '';
+
+      const notificationsToSend = [];
+      const recipientUserIds = new Set();
+
+      // 1. Notify all Faculty Mentors assigned to this specific project (never other mentors)
+      const mentorAssignments = await ProjectMentor.find({ projectId }).select('mentorId');
+      for (const a of mentorAssignments) {
+        const mId = a.mentorId?.toString();
+        if (mId && mId !== studentId.toString() && !recipientUserIds.has(mId)) {
+          recipientUserIds.add(mId);
+          notificationsToSend.push({
+            userId: a.mentorId,
+            type: 'project_update',
+            title: 'New Project Update',
+            message: `${authorName} posted a new update "${update.title}" on project "${project.name}"${attachmentText}.`,
+            relatedId: update._id,
+            link: `/projects/${project._id}#update-${update._id}`,
+            actionText: 'View Update',
+            metadata: {
+              actorId: req.user.userId,
+              actorName: authorName,
+              actorEmail: authorEmail,
+              department: authorDept,
+              semester: authorSem,
+              projectId: project._id,
+              projectName: project.name,
+              entityName: update.title,
+              action: 'update_posted',
+              submissionTime: update.createdAt,
+              hasAttachments,
+              attachmentCount,
+            },
+          });
+        }
+      }
+
+      // 2. Notify all Project Admins (Guitar)
+      const projectAdmins = await User.find({ role: 'project_admin' }).select('_id');
+      for (const admin of projectAdmins) {
+        const aId = admin._id?.toString();
+        if (aId && aId !== studentId.toString() && !recipientUserIds.has(aId)) {
+          recipientUserIds.add(aId);
+          notificationsToSend.push({
+            userId: admin._id,
+            type: 'project_update',
+            title: 'New Project Update',
+            message: `${authorName} posted a new update "${update.title}" on project "${project.name}"${attachmentText}.`,
+            relatedId: update._id,
+            link: `/projects/${project._id}#update-${update._id}`,
+            actionText: 'View Update',
+            metadata: {
+              actorId: req.user.userId,
+              actorName: authorName,
+              actorEmail: authorEmail,
+              department: authorDept,
+              semester: authorSem,
+              projectId: project._id,
+              projectName: project.name,
+              entityName: update.title,
+              action: 'update_posted',
+              submissionTime: update.createdAt,
+              hasAttachments,
+              attachmentCount,
+            },
+          });
+        }
+      }
+
+      if (notificationsToSend.length > 0) {
+        await createNotifications(notificationsToSend);
+      }
+    } catch (notifErr) {
+      console.error('[Notification] project_update error:', notifErr.message);
     }
 
     res.status(201).json({
@@ -570,6 +645,67 @@ router.post('/:projectId/feedback', requireAuth, async (req, res) => {
     await feedback.populate('projectId', 'name status');
     if (feedback.updateId) {
       await feedback.populate('updateId', 'title description');
+    }
+
+    // ── Notify relevant project students about the mentor feedback ───────────
+    try {
+      const recipientSet = new Set();
+
+      // 1. Student author of the specific update
+      if (feedback.updateId && feedback.updateId._id) {
+        const targetUpdate = await ProjectUpdate.findById(feedback.updateId._id).select('studentId title');
+        if (targetUpdate?.studentId) {
+          recipientSet.add(targetUpdate.studentId.toString());
+        }
+      }
+
+      // 2. Project Team Leader
+      const projectDoc = await Project.findById(projectId).select('name teamLeaderId');
+      if (projectDoc?.teamLeaderId) {
+        recipientSet.add(projectDoc.teamLeaderId.toString());
+      }
+
+      // 3. Project members
+      const memberships = await ProjectMembership.find({ projectId }).select('studentId');
+      for (const m of memberships) {
+        if (m.studentId) {
+          recipientSet.add(m.studentId.toString());
+        }
+      }
+
+      // Exclude the mentor themselves
+      recipientSet.delete(req.user.userId.toString());
+
+      if (recipientSet.size > 0) {
+        const mentorName = req.user.name || 'Faculty Mentor';
+        const projName = projectDoc?.name || feedback.projectId?.name || 'Project';
+        const updateTitle = feedback.updateId?.title || 'Project Update';
+        const rawFeedback = feedbackText.trim();
+        const preview = rawFeedback.length > 120 ? `${rawFeedback.substring(0, 117)}...` : rawFeedback;
+
+        createNotifications(
+          Array.from(recipientSet).map((studentUserId) => ({
+            userId: studentUserId,
+            type: 'project_update',
+            title: 'Faculty Feedback Received',
+            message: `${mentorName} provided feedback on update "${updateTitle}" for project "${projName}": "${preview}"`,
+            relatedId: feedback._id,
+            link: `/projects/${projectId}#update-${feedback.updateId?._id || ''}`,
+            actionText: 'View Feedback',
+            metadata: {
+              actorId: req.user.userId,
+              actorName: mentorName,
+              projectId: projectId,
+              projectName: projName,
+              entityName: updateTitle,
+              feedbackText: rawFeedback,
+              action: 'feedback_submitted',
+            },
+          }))
+        ).catch((e) => console.error('[Notification] faculty_feedback batch:', e.message));
+      }
+    } catch (notifErr) {
+      console.error('[Notification] Error creating feedback notifications:', notifErr.message);
     }
 
     res.status(201).json({

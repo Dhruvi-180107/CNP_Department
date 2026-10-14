@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { api, API_URL, getStoredToken } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { UserDisplay } from '../UserDisplay';
+import { UserSelect } from '../UserSelect';
 
 export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => void }) {
   const clubId = club._id;
@@ -9,6 +10,7 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
   
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [existingMembers, setExistingMembers] = useState<any[]>([]);
   const [addStudentId, setAddStudentId] = useState('');
   const [addMembershipType, setAddMembershipType] = useState('member');
   const [addPosition, setAddPosition] = useState('');
@@ -22,9 +24,18 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
   const [editDescription, setEditDescription] = useState(club.description);
   
   // Coordinator states
-  const [availableCoordinators, setAvailableCoordinators] = useState<any[]>([]);
-  const [selectedCoordinatorId, setSelectedCoordinatorId] = useState(typeof club.facultyCoordinatorId === 'object' ? club.facultyCoordinatorId?._id || '' : club.facultyCoordinatorId || '');
-  const [loadingCoordinators, setLoadingCoordinators] = useState(false);
+  const currentCoordinatorId = typeof club.facultyCoordinatorId === 'object' 
+    ? club.facultyCoordinatorId?._id || '' 
+    : club.facultyCoordinatorId || '';
+  const [selectedCoordinatorId, setSelectedCoordinatorId] = useState(currentCoordinatorId);
+  const [updatingCoordinator, setUpdatingCoordinator] = useState(false);
+
+  useEffect(() => {
+    const cid = typeof club.facultyCoordinatorId === 'object' 
+      ? club.facultyCoordinatorId?._id || '' 
+      : club.facultyCoordinatorId || '';
+    setSelectedCoordinatorId(cid);
+  }, [club.facultyCoordinatorId]);
 
   const loadRequests = async () => {
     try {
@@ -37,22 +48,18 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
     }
   };
 
-  const loadCoordinators = async () => {
-    if (user?.role !== 'club_admin') return;
-    setLoadingCoordinators(true);
+  const loadMembers = async () => {
     try {
-      const users = await api<any>('GET', '/users').then(res => res.data);
-      setAvailableCoordinators(users.filter((u: any) => u.role === 'faculty_coordinator'));
+      const res = await api<any>('GET', `/clubs/${clubId}/members`);
+      setExistingMembers(res.data || []);
     } catch (e) {
       console.error(e);
-    } finally {
-      setLoadingCoordinators(false);
     }
   };
 
   useEffect(() => {
     loadRequests();
-    loadCoordinators();
+    loadMembers();
   }, [clubId, user]);
 
   const handleUpdateDetails = async () => {
@@ -69,7 +76,7 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
   };
 
   const handleAssignCoordinator = async () => {
-    setLoading(true);
+    setUpdatingCoordinator(true);
     try {
       await api('PATCH', `/clubs/${clubId}/coordinator`, { facultyCoordinatorId: selectedCoordinatorId || null });
       onUpdate();
@@ -77,7 +84,7 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
     } catch (e: any) {
       alert(e.message || 'Failed to update coordinator');
     } finally {
-      setLoading(false);
+      setUpdatingCoordinator(false);
     }
   };
 
@@ -85,6 +92,7 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
     try {
       await api('PATCH', `/join-requests/${id}/approve`);
       setRequests(requests.filter(r => r._id !== id));
+      loadMembers();
       onUpdate();
       alert('Request approved');
     } catch (e: any) {
@@ -104,7 +112,7 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addStudentId) return alert('Student ID is required');
+    if (!addStudentId) return alert('Please select a student');
     
     try {
       await api('POST', `/clubs/${clubId}/members`, {
@@ -116,6 +124,7 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
       setAddStudentId('');
       setAddPosition('');
       setAddMembershipType('member');
+      loadMembers();
       onUpdate();
     } catch (e: any) {
       alert(e.message || 'Failed to add member');
@@ -182,9 +191,13 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
 
   if (loading) return <div className="spinner"></div>;
 
+  const existingMemberIds = existingMembers.map((m: any) => 
+    typeof m.studentId === 'object' ? m.studentId?._id : m.studentId
+  ).filter(Boolean);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', marginBottom: '24px' }}>
-      <div className="card">
+      <div className="card" id="join-requests">
         <h3 className="card-title" style={{ marginBottom: '16px' }}>Pending Join Requests</h3>
         <div className="card-body" style={{ padding: 0 }}>
           {requests.length ? (
@@ -192,12 +205,29 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
               {requests.map(r => (
                 <div key={r._id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid var(--border)', padding: '16px', borderRadius: '12px', background: 'var(--bg-card-2)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--warn-soft)', color: 'var(--warn)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+                    <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: 'var(--warn-soft)', color: 'var(--warn)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '16px' }}>
                       {(r.studentId?.name || '?').charAt(0)}
                     </div>
                     <div>
-                      <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: '15px' }}>{r.studentId?.name || 'Unknown Student'}</div>
-                      <div style={{ fontSize: '13px', color: 'var(--text-faint)' }}>{r.studentId?.email} • Requested {new Date(r.createdAt).toLocaleDateString()}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontWeight: 600, color: 'var(--text)', fontSize: '15px' }}>{r.studentId?.name || 'Unknown Student'}</span>
+                        <span className="badge badge-warning" style={{ fontSize: '11px', padding: '2px 8px', background: 'var(--warn-soft)', color: 'var(--warn)' }}>Pending</span>
+                      </div>
+                      <div style={{ fontSize: '13px', marginTop: '2px' }}>
+                        <a href={`mailto:${r.studentId?.email}`} style={{ color: 'var(--primary)', textDecoration: 'none' }}>{r.studentId?.email}</a>
+                        {(r.studentId?.department || r.studentId?.semester || r.studentId?.enrollmentNumber) && (
+                          <span style={{ color: 'var(--text-faint)' }}>
+                            {' • '}
+                            {r.studentId?.enrollmentNumber && <span>Enrollment: {r.studentId.enrollmentNumber} • </span>}
+                            {r.studentId?.department}
+                            {r.studentId?.department && r.studentId?.semester ? ', ' : ''}
+                            {r.studentId?.semester ? `Semester ${r.studentId.semester}` : ''}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-faint)', marginTop: '4px' }}>
+                        Requested: {new Date(r.createdAt).toLocaleString()}
+                      </div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -216,36 +246,57 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
           <h3 className="card-title" style={{ marginBottom: '16px' }}>Add Member Manually</h3>
           <div className="card-body" style={{ padding: 0 }}>
             <form onSubmit={handleAddMember} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <input 
-                type="text" 
-                className="input" 
-                placeholder="Student ID (Object ID)" 
-                value={addStudentId} 
-                onChange={e => setAddStudentId(e.target.value)} 
-                required 
-                style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg)' }}
-              />
-              <select 
-                className="input" 
-                value={addMembershipType} 
-                onChange={e => setAddMembershipType(e.target.value)}
-                style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg)' }}
-              >
-                <option value="member">Member</option>
-                <option value="core_team">Core Team</option>
-              </select>
-              {addMembershipType === 'core_team' && (
-                <input 
-                  type="text" 
-                  className="input" 
-                  placeholder="Position (e.g. Technical Lead)" 
-                  value={addPosition} 
-                  onChange={e => setAddPosition(e.target.value)} 
-                  required 
-                  style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg)' }}
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, color: 'var(--text-muted)', fontSize: '13px' }}>
+                  Select Student
+                </label>
+                <UserSelect
+                  role="student"
+                  value={addStudentId}
+                  onChange={setAddStudentId}
+                  placeholder="Search and select student..."
+                  disabledUserIds={existingMemberIds}
+                  disabledReason="Already a member"
                 />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, color: 'var(--text-muted)', fontSize: '13px' }}>
+                  Membership Type
+                </label>
+                <select 
+                  className="input" 
+                  value={addMembershipType} 
+                  onChange={e => setAddMembershipType(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg)' }}
+                >
+                  <option value="member">Member</option>
+                  <option value="core_team">Core Team</option>
+                </select>
+              </div>
+              {addMembershipType === 'core_team' && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, color: 'var(--text-muted)', fontSize: '13px' }}>
+                    Position
+                  </label>
+                  <input 
+                    type="text" 
+                    className="input" 
+                    placeholder="Position (e.g. Technical Lead)" 
+                    value={addPosition} 
+                    onChange={e => setAddPosition(e.target.value)} 
+                    required 
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg)' }}
+                  />
+                </div>
               )}
-              <button type="submit" className="btn btn-primary" style={{ alignSelf: 'flex-start' }}>Add Member</button>
+              <button 
+                type="submit" 
+                className="btn btn-primary" 
+                disabled={!addStudentId}
+                style={{ alignSelf: 'flex-start' }}
+              >
+                Add Member
+              </button>
             </form>
           </div>
         </div>
@@ -329,20 +380,23 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, color: 'var(--text-muted)', fontSize: '13px' }}>Assign / Reassign Coordinator</label>
-                  <select 
-                    className="input"
+                  <UserSelect
+                    role="faculty_coordinator"
                     value={selectedCoordinatorId}
-                    onChange={e => setSelectedCoordinatorId(e.target.value)}
-                    style={{ width: '100%', padding: '10px 12px' }}
-                    disabled={loadingCoordinators}
-                  >
-                    <option value="">-- No Coordinator --</option>
-                    {availableCoordinators.map(fc => (
-                      <option key={fc._id} value={fc._id}>{fc.name} ({fc.email})</option>
-                    ))}
-                  </select>
+                    onChange={setSelectedCoordinatorId}
+                    placeholder="Search and select faculty coordinator..."
+                    disabledUserIds={currentCoordinatorId ? [currentCoordinatorId] : []}
+                    disabledReason="Currently assigned"
+                  />
                 </div>
-                <button className="btn btn-outline" style={{ alignSelf: 'flex-start', color: 'var(--primary)', borderColor: 'var(--primary-soft)' }} onClick={handleAssignCoordinator} disabled={loading}>Update Assignment</button>
+                <button 
+                  className="btn btn-outline" 
+                  style={{ alignSelf: 'flex-start', color: 'var(--primary)', borderColor: 'var(--primary-soft)' }} 
+                  onClick={handleAssignCoordinator} 
+                  disabled={updatingCoordinator || selectedCoordinatorId === currentCoordinatorId}
+                >
+                  {updatingCoordinator ? 'Updating...' : 'Update Assignment'}
+                </button>
               </div>
             </div>
           </div>

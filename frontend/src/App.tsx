@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider, useAuth, isProfileComplete } from './context/AuthContext';
 import { AppLayout } from './components/layout/AppLayout';
 import { ProtectedRoute, RoleProtectedRoute } from './components/ProtectedRoute';
 
@@ -16,16 +16,6 @@ import Login from './pages/Auth/Login';
 import Register from './pages/Auth/Register';
 import MaterialRequests from './pages/MaterialRequests/MaterialRequests';
 import Inventory from './pages/Inventory/Inventory';
-
-function isProfileComplete(user: any): boolean {
-  if (!user) return false;
-  const hasName = !!(user.name && user.name.trim());
-  const hasDept = !!(user.department && user.department.trim());
-  const hasPhone = !!(user.phone && user.phone.trim());
-  const hasUniId = !!(user.universityId && user.universityId.trim());
-  const hasSemester = !!user.semester;
-  return hasName && hasDept && hasPhone && (user.role === 'student' ? (hasUniId && hasSemester) : true);
-}
 
 function AuthGuard() {
   const { user, loading } = useAuth();

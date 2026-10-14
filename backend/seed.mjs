@@ -94,16 +94,16 @@ async function runSeed() {
 
   // USERS
   const usersData = [
-    { name: 'Arjun Mehta', email: 'arjun.mehta@test.com', role: 'student', profileImageFile: 'arjun-mehta.jpg' },
-    { name: 'Riya Sharma', email: 'riya.sharma@test.com', role: 'student', profileImageFile: 'riya-sharma.jpg' },
-    { name: 'Kabir Patel', email: 'kabir.patel@test.com', role: 'student', profileImageFile: 'kabir-patel.jpg' },
-    { name: 'Ananya Singh', email: 'ananya.singh@test.com', role: 'student', profileImageFile: 'ananya-singh.jpg' },
-    { name: 'Dr. Neha Verma', email: 'neha.verma@test.com', role: 'faculty_coordinator', profileImageFile: 'neha-verma.jpg', department: 'Computer Science' },
-    { name: 'Dr. Rahul Desai', email: 'rahul.desai@test.com', role: 'faculty_coordinator', profileImageFile: 'rahul-desai.jpg', department: 'Electronics' },
-    { name: 'Dr. Amit Joshi', email: 'amit.joshi@test.com', role: 'faculty_mentor', profileImageFile: 'amit-joshi.jpg', department: 'Computer Science' },
-    { name: 'Dr. Priya Nair', email: 'priya.nair@test.com', role: 'faculty_mentor', profileImageFile: 'priya-nair.jpg', department: 'Electronics' },
-    { name: 'Karan Shah', email: 'karan.shah@test.com', role: 'club_admin', profileImageFile: 'karan-shah.jpg' },
-    { name: 'Vivek Malhotra', email: 'vivek.malhotra@test.com', role: 'project_admin', profileImageFile: 'vivek-malhotra.jpg' }
+    { name: 'Arjun Mehta', email: 'arjun.mehta@test.com', role: 'student', profileImageFile: 'arjun-mehta.jpg', department: 'CSE', semester: 5, phone: '9876543210', universityId: 'CNP2023001' },
+    { name: 'Riya Sharma', email: 'riya.sharma@test.com', role: 'student', profileImageFile: 'riya-sharma.jpg', department: 'CSE', semester: 5, phone: '9876543211', universityId: 'CNP2023002' },
+    { name: 'Kabir Patel', email: 'kabir.patel@test.com', role: 'student', profileImageFile: 'kabir-patel.jpg', department: 'CSE', semester: 5, phone: '9876543212', universityId: 'CNP2023003' },
+    { name: 'Ananya Singh', email: 'ananya.singh@test.com', role: 'student', profileImageFile: 'ananya-singh.jpg', department: 'ECE', semester: 4, phone: '9876543213', universityId: 'CNP2023004' },
+    { name: 'Dr. Neha Verma', email: 'neha.verma@test.com', role: 'faculty_coordinator', profileImageFile: 'neha-verma.jpg', department: 'Computer Science', phone: '9876543214' },
+    { name: 'Dr. Rahul Desai', email: 'rahul.desai@test.com', role: 'faculty_coordinator', profileImageFile: 'rahul-desai.jpg', department: 'Electronics', phone: '9876543215' },
+    { name: 'Dr. Amit Joshi', email: 'amit.joshi@test.com', role: 'faculty_mentor', profileImageFile: 'amit-joshi.jpg', department: 'Computer Science', phone: '9876543216' },
+    { name: 'Dr. Priya Nair', email: 'priya.nair@test.com', role: 'faculty_mentor', profileImageFile: 'priya-nair.jpg', department: 'Electronics', phone: '9876543217' },
+    { name: 'Karan Shah', email: 'karan.shah@test.com', role: 'club_admin', profileImageFile: 'karan-shah.jpg', department: 'Management', phone: '9876543218' },
+    { name: 'Vivek Malhotra', email: 'vivek.malhotra@test.com', role: 'project_admin', profileImageFile: 'vivek-malhotra.jpg', department: 'Management', phone: '9876543219' }
   ];
 
   const userDocs = {};
@@ -117,6 +117,9 @@ async function runSeed() {
       password: 'Test@12345',
       role: u.role,
       department: u.department,
+      semester: u.semester || null,
+      phone: u.phone || null,
+      universityId: u.universityId || null,
       profileImage: asset ? asset.secure_url : null,
       profileImagePublicId: asset ? asset.public_id : null
     });
@@ -243,8 +246,9 @@ async function runSeed() {
     { type: 'project', student: 'Kabir Patel', target: 'Campus Energy Monitor', status: 'rejected', reviewer: 'Dr. Amit Joshi' }
   ];
 
+  const joinReqDocs = {};
   for (const jr of joinReqsData) {
-    await JoinRequest.create({
+    const doc = await JoinRequest.create({
       requestType: jr.type,
       studentId: userDocs[jr.student]._id,
       clubId: jr.type === 'club' ? clubDocs[jr.target]._id : null,
@@ -252,6 +256,7 @@ async function runSeed() {
       status: jr.status,
       reviewerId: userDocs[jr.reviewer]._id
     });
+    joinReqDocs[`${jr.student}_${jr.target}`] = doc;
     report.joinRequests++;
   }
 
@@ -434,14 +439,54 @@ async function runSeed() {
 
   // NOTIFICATIONS
   const notificationsData = [
-    { user: 'Arjun Mehta', type: 'material_request_approved', title: 'Request Approved', msg: 'Your material request was approved.' },
-    { user: 'Arjun Mehta', type: 'material_request_rejected', title: 'Request Rejected', msg: 'Your material request was rejected.' },
+    { user: 'Arjun Mehta', type: 'material_request_approved', title: 'Material Request Approved', msg: 'Your material request was approved.' },
+    { user: 'Arjun Mehta', type: 'material_request_rejected', title: 'Material Request Rejected', msg: 'Your material request was rejected.' },
     { user: 'Arjun Mehta', type: 'project_update', title: 'Mentor Feedback Received', msg: 'You have new feedback from your mentor.' }, // using project_update as a stand in for feedback received
     { user: 'Riya Sharma', type: 'project_update', title: 'Project Update', msg: 'Your project has an update.' },
     { user: 'Riya Sharma', type: 'material_request_rejected', title: 'Material Request Pending', msg: 'Your request is pending.' }, // No exact pending type, using something else or standard if allowed. Wait, NOTIFICATION_TYPES does not have material_request_pending. So use project_update for now. Let me just use valid enum.
     { user: 'Ananya Singh', type: 'club_join_request', title: 'Join Request', msg: 'Your join request is pending.' },
-    { user: 'Dr. Neha Verma', type: 'club_join_request', title: 'New Join Request', msg: 'You have a new club join request.' },
-    { user: 'Dr. Amit Joshi', type: 'project_join_request', title: 'New Join Request', msg: 'You have a new project join request.' },
+    {
+      user: 'Dr. Neha Verma',
+      type: 'club_join_request',
+      title: 'New Club Join Request',
+      msg: 'A student has requested to join this club.',
+      relatedId: joinReqDocs['Ananya Singh_Robotics Club']?._id,
+      link: `/clubs/${clubDocs['Robotics Club']._id}#join-requests`,
+      actionText: 'Review Request',
+      metadata: {
+        actorId: userDocs['Ananya Singh']._id,
+        actorName: 'Ananya Singh',
+        actorEmail: userDocs['Ananya Singh'].email,
+        department: 'CSE',
+        semester: 4,
+        status: 'pending',
+        clubId: clubDocs['Robotics Club']._id,
+        clubName: 'Robotics Club',
+        joinRequestId: joinReqDocs['Ananya Singh_Robotics Club']?._id,
+        action: 'join_requested',
+      },
+    },
+    {
+      user: 'Dr. Amit Joshi',
+      type: 'project_join_request',
+      title: 'New Project Join Request',
+      msg: 'A student has requested to join this project.',
+      relatedId: joinReqDocs['Ananya Singh_Smart Irrigation System']?._id,
+      link: `/projects/${projectDocs['Smart Irrigation System']._id}#join-requests`,
+      actionText: 'Review Request',
+      metadata: {
+        actorId: userDocs['Ananya Singh']._id,
+        actorName: 'Ananya Singh',
+        actorEmail: userDocs['Ananya Singh'].email,
+        department: 'CSE',
+        semester: 4,
+        status: 'pending',
+        projectId: projectDocs['Smart Irrigation System']._id,
+        projectName: 'Smart Irrigation System',
+        joinRequestId: joinReqDocs['Ananya Singh_Smart Irrigation System']?._id,
+        action: 'join_requested',
+      },
+    },
     { user: 'Dr. Amit Joshi', type: 'project_update', title: 'Project Update Submitted', msg: 'A student has submitted an update.' },
     { user: 'Vivek Malhotra', type: 'material_request_approved', title: 'Pending Material Request', msg: 'There is a pending material request.' },
     { user: 'Vivek Malhotra', type: 'project_join_request', title: 'Pending Project Request', msg: 'There is a pending project request.' }
@@ -453,6 +498,10 @@ async function runSeed() {
       type: n.type,
       title: n.title,
       message: n.msg,
+      relatedId: n.relatedId || null,
+      link: n.link || null,
+      actionText: n.actionText || null,
+      metadata: n.metadata || null,
       isRead: false
     });
     report.notifications++;

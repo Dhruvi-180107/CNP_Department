@@ -232,25 +232,156 @@ router.patch('/:clubId/coordinator', requireAuth, requireAnyRole('club_admin'), 
   }
 });
 
+/**
+ * Attaches membership counts (totalMembers, memberCount, coreTeamCount, regularMemberCount)
+ * to an array of Club documents.
+ */
+async function attachMembershipCounts(clubs) {
+  if (!clubs || clubs.length === 0) return [];
+  const clubIds = clubs.map((c) => c._id);
+  const memberships = await ClubMembership.aggregate([
+    { $match: { clubId: { $in: clubIds } } },
+    {
+      $group: {
+        _id: '$clubId',
+        totalMembers: { $sum: 1 },
+        coreTeamCount: {
+          $sum: { $cond: [{ $eq: ['$membershipType', 'core_team'] }, 1, 0] },
+        },
+        regularMemberCount: {
+          $sum: { $cond: [{ $ne: ['$membershipType', 'core_team'] }, 1, 0] },
+        },
+      },
+    },
+  ]);
+
+  const statsMap = new Map();
+  for (const m of memberships) {
+    statsMap.set(m._id.toString(), m);
+  }
+
+  return clubs.map((c) => {
+    const cObj = typeof c.toObject === 'function' ? c.toObject() : { ...c };
+    const stats = statsMap.get(cObj._id.toString()) || {
+      totalMembers: 0,
+      coreTeamCount: 0,
+      regularMemberCount: 0,
+    };
+    cObj.totalMembers = stats.totalMembers;
+    cObj.memberCount = stats.totalMembers;
+    cObj.coreTeamCount = stats.coreTeamCount;
+    cObj.regularMemberCount = stats.regularMemberCount;
+    return cObj;
+  });
+}
+
 // ── GET /api/clubs ────────────────────────────────────────────────────────────
-// Return all clubs — publicly readable (any authenticated user).
-router.get('/', requireAuth, async (_req, res) => {
+// Return clubs — publicly readable (any authenticated user).
+// Optional query parameter: ?coordinatorId=<userId|me>
+// SECURITY:
+//   - faculty_coordinator can ONLY view their own assigned clubs.
+//   - club_admin / project_admin can query any coordinator's assigned clubs.
+//   - Other roles filtering by coordinator receive 403 Forbidden.
+router.get('/', requireAuth, async (req, res) => {
   try {
-    const clubs = await Club.find()
+    const { coordinatorId } = req.query;
+    const actingUserId = req.user.userId;
+    const actingRole = req.user.role;
+
+    const filter = {};
+
+    if (coordinatorId) {
+      const targetCoordinatorId = coordinatorId === 'me' ? actingUserId : coordinatorId;
+
+      if (actingRole === 'faculty_coordinator') {
+        if (targetCoordinatorId !== actingUserId) {
+          return res.status(403).json({
+            success: false,
+            message: 'You can only view your own assigned clubs',
+          });
+        }
+      } else if (actingRole !== 'club_admin' && actingRole !== 'project_admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'You do not have permission to view coordinator club assignments',
+        });
+      }
+
+      filter.facultyCoordinatorId = targetCoordinatorId;
+    }
+
+    const clubs = await Club.find(filter)
       .populate('facultyCoordinatorId', 'name email role profileImage department semester')
       .populate('createdBy', 'name email role profileImage department semester')
       .sort({ createdAt: -1 });
 
+    const clubsWithStats = await attachMembershipCounts(clubs);
+
     res.status(200).json({
       success: true,
-      count: clubs.length,
-      data: clubs,
+      count: clubsWithStats.length,
+      data: clubsWithStats,
     });
   } catch (error) {
+    if (error.name === 'CastError') {
+      return res.status(400).json({ success: false, message: 'Invalid coordinator ID format' });
+    }
     res.status(500).json({
       success: false,
       message: error.message,
     });
+  }
+});
+
+// ── GET /api/clubs/coordinator/:coordinatorId ─────────────────────────────────
+// Return all clubs assigned to a specific coordinator.
+// SECURITY:
+//   - faculty_coordinator: can only view their own assigned clubs
+//   - club_admin / project_admin: can view any coordinator's assigned clubs
+router.get('/coordinator/:coordinatorId', requireAuth, async (req, res) => {
+  try {
+    const { coordinatorId } = req.params;
+    const actingUserId = req.user.userId;
+    const actingRole = req.user.role;
+    const targetCoordinatorId = coordinatorId === 'me' ? actingUserId : coordinatorId;
+
+    if (actingRole === 'faculty_coordinator') {
+      if (targetCoordinatorId !== actingUserId) {
+        return res.status(403).json({
+          success: false,
+          message: 'You can only view your own assigned clubs',
+        });
+      }
+    } else if (actingRole !== 'club_admin' && actingRole !== 'project_admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to view coordinator club assignments',
+      });
+    }
+
+    const coordinator = await User.findById(targetCoordinatorId);
+    if (!coordinator) {
+      return res.status(404).json({ success: false, message: 'Coordinator not found' });
+    }
+
+    const clubs = await Club.find({ facultyCoordinatorId: targetCoordinatorId })
+      .populate('facultyCoordinatorId', 'name email role profileImage department semester')
+      .populate('createdBy', 'name email role profileImage department semester')
+      .sort({ createdAt: -1 });
+
+    const clubsWithStats = await attachMembershipCounts(clubs);
+
+    res.status(200).json({
+      success: true,
+      coordinator: { id: coordinator._id, name: coordinator.name, email: coordinator.email, role: coordinator.role },
+      count: clubsWithStats.length,
+      data: clubsWithStats,
+    });
+  } catch (error) {
+    if (error.name === 'CastError') {
+      return res.status(400).json({ success: false, message: 'Invalid coordinator ID format' });
+    }
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
@@ -297,6 +428,32 @@ router.post(
         }
       }
 
+      // Verify student user exists
+      const student = await User.findById(studentId);
+      if (!student) {
+        return res.status(404).json({
+          success: false,
+          message: 'Student (User) not found',
+        });
+      }
+
+      // Verify user has student role
+      if (student.role !== 'student') {
+        return res.status(400).json({
+          success: false,
+          message: 'Only users with role "student" can be added to a club',
+        });
+      }
+
+      // Check existing membership (duplicate check)
+      const existing = await ClubMembership.findOne({ studentId, clubId });
+      if (existing) {
+        return res.status(409).json({
+          success: false,
+          message: 'This student is already a member of this club. Duplicate membership is not allowed.',
+        });
+      }
+
       const membership = await ClubMembership.create({
         studentId,
         clubId,
@@ -305,7 +462,7 @@ router.post(
       });
 
       // Populate student info before returning
-      await membership.populate('studentId', 'name email role profileImage department semester');
+      await membership.populate('studentId', 'name email role profileImage department semester enrollmentNumber');
       await membership.populate('clubId', 'name');
 
       res.status(201).json({
@@ -345,7 +502,7 @@ router.get('/:clubId/members', requireAuth, async (req, res) => {
     }
 
     const members = await ClubMembership.find({ clubId })
-      .populate('studentId', 'name email role profileImage department semester') // Only safe fields — no passwords
+      .populate('studentId', 'name email role profileImage department semester enrollmentNumber') // Only safe fields — no passwords
       .sort({ joinedAt: 1 });
 
     res.status(200).json({
@@ -443,4 +600,57 @@ router.patch(
   }
 );
 
+// ─── Router scoped to /api/coordinators ───────────────────────────────────────
+const coordinatorRouter = express.Router();
+
+// ── GET /api/coordinators/:coordinatorId/clubs ─────────────────────────────────
+// Return all clubs assigned to a specific coordinator.
+coordinatorRouter.get('/:coordinatorId/clubs', requireAuth, async (req, res) => {
+  try {
+    const { coordinatorId } = req.params;
+    const actingUserId = req.user.userId;
+    const actingRole = req.user.role;
+    const targetCoordinatorId = coordinatorId === 'me' ? actingUserId : coordinatorId;
+
+    if (actingRole === 'faculty_coordinator') {
+      if (targetCoordinatorId !== actingUserId) {
+        return res.status(403).json({
+          success: false,
+          message: 'You can only view your own assigned clubs',
+        });
+      }
+    } else if (actingRole !== 'club_admin' && actingRole !== 'project_admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to view coordinator club assignments',
+      });
+    }
+
+    const coordinator = await User.findById(targetCoordinatorId);
+    if (!coordinator) {
+      return res.status(404).json({ success: false, message: 'Coordinator not found' });
+    }
+
+    const clubs = await Club.find({ facultyCoordinatorId: targetCoordinatorId })
+      .populate('facultyCoordinatorId', 'name email role profileImage department semester')
+      .populate('createdBy', 'name email role profileImage department semester')
+      .sort({ createdAt: -1 });
+
+    const clubsWithStats = await attachMembershipCounts(clubs);
+
+    res.status(200).json({
+      success: true,
+      coordinator: { id: coordinator._id, name: coordinator.name, email: coordinator.email, role: coordinator.role },
+      count: clubsWithStats.length,
+      data: clubsWithStats,
+    });
+  } catch (error) {
+    if (error.name === 'CastError') {
+      return res.status(400).json({ success: false, message: 'Invalid coordinator ID format' });
+    }
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+export { coordinatorRouter };
 export default router;

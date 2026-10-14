@@ -71,6 +71,27 @@ const eventSchema = new mongoose.Schema(
       ref: 'User',
       required: [true, 'createdBy is required'],
     },
+
+    // ── 24-Hour Reminder Tracking ─────────────────────────────────────────────
+    reminderScheduledFor: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    reminderSent: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    reminderSentAt: {
+      type: Date,
+      default: null,
+    },
+    reminderSkipped: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   { timestamps: true }
 );
@@ -80,6 +101,9 @@ eventSchema.index({ eventDate: 1 });
 
 // Index for club-scoped event queries
 eventSchema.index({ clubId: 1, eventDate: 1 });
+
+// Index for pending reminder queries
+eventSchema.index({ eventDate: 1, reminderSent: 1, reminderSkipped: 1, reminderScheduledFor: 1 });
 
 const Event = mongoose.model('Event', eventSchema);
 

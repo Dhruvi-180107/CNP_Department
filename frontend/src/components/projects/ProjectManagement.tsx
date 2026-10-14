@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { UserDisplay } from '../UserDisplay';
+import { UserSelect } from '../UserSelect';
 import { api } from '../../services/api';
 
 export function ProjectManagement({ project, onUpdate }: { project: any, onUpdate: () => void }) {
@@ -8,7 +9,7 @@ export function ProjectManagement({ project, onUpdate }: { project: any, onUpdat
   const [editDescription, setEditDescription] = useState(project.description);
   
   const [loading, setLoading] = useState(false);
-  const [studentEmail, setStudentEmail] = useState('');
+  const [selectedStudentId, setSelectedStudentId] = useState('');
   const [members, setMembers] = useState<any[]>([]);
 
   useEffect(() => {
@@ -43,17 +44,11 @@ export function ProjectManagement({ project, onUpdate }: { project: any, onUpdat
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedStudentId) return;
     setLoading(true);
     try {
-      const users = await api<any>('GET', '/users').then(res => res.data);
-      const targetUser = users.find((u: any) => u.email === studentEmail && u.role === 'student');
-      
-      if (!targetUser) {
-        throw new Error('Student not found with that email');
-      }
-
-      await api('POST', `/projects/${project._id}/members`, { studentId: targetUser._id });
-      setStudentEmail('');
+      await api('POST', `/projects/${project._id}/members`, { studentId: selectedStudentId });
+      setSelectedStudentId('');
       loadMembers();
       onUpdate(); // trigger global reload for members in parent
       alert('Student added successfully');
@@ -163,17 +158,32 @@ export function ProjectManagement({ project, onUpdate }: { project: any, onUpdat
             {/* ADD MEMBER */}
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, color: 'var(--text-muted)', fontSize: '13px' }}>Add Project Member</label>
-              <form onSubmit={handleAddMember} style={{ display: 'flex', gap: '8px' }}>
-                <input 
-                  type="email" 
-                  className="input" 
-                  placeholder="Student Email" 
-                  value={studentEmail} 
-                  onChange={e => setStudentEmail(e.target.value)} 
-                  required
-                  style={{ flex: 1, padding: '10px 12px' }}
-                />
-                <button type="submit" className="btn btn-outline" disabled={loading} style={{ color: 'var(--primary)', borderColor: 'var(--primary-soft)' }}>Add</button>
+              <form onSubmit={handleAddMember} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1 }}>
+                  <UserSelect
+                    role="student"
+                    value={selectedStudentId}
+                    onChange={(id) => setSelectedStudentId(id)}
+                    disabledUserIds={members.map((m: any) => m.studentId?._id || m.studentId)}
+                    disabledReason="Already a member"
+                    placeholder="Search student by name, email, or department..."
+                    emptyMessage="No registered students found"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="btn btn-outline"
+                  disabled={loading || !selectedStudentId}
+                  style={{
+                    color: 'var(--primary)',
+                    borderColor: 'var(--primary-soft)',
+                    height: '44px',
+                    padding: '0 20px',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Add
+                </button>
               </form>
             </div>
 

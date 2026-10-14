@@ -18,6 +18,7 @@ export default function Profile() {
     name: user?.name || '',
     department: user?.department || '',
     universityId: user?.universityId || '',
+    enrollmentNumber: user?.enrollmentNumber || '',
     semester: user?.semester || '',
     phone: user?.phone || '',
     bio: user?.bio || '',
@@ -76,6 +77,7 @@ export default function Profile() {
       name: user.name || '',
       department: user.department || '',
       universityId: user.universityId || '',
+      enrollmentNumber: user.enrollmentNumber || '',
       semester: user.semester || '',
       phone: user.phone || '',
       bio: user.bio || '',
@@ -146,6 +148,16 @@ export default function Profile() {
             {isStudent && (
               <>
                 <div className="auth-field" style={{ margin: 0 }}>
+                  <label>Enrollment Number</label>
+                  <input
+                    type="text"
+                    value={formData.enrollmentNumber}
+                    onChange={e => setFormData({ ...formData, enrollmentNumber: e.target.value })}
+                    disabled={loading}
+                    placeholder="e.g. 0901CS201045"
+                  />
+                </div>
+                <div className="auth-field" style={{ margin: 0 }}>
                   <label>University ID <span style={{ color: 'var(--warn)' }}>*</span></label>
                   <input type="text" value={formData.universityId} onChange={e => setFormData({ ...formData, universityId: e.target.value })} required disabled={loading} />
                 </div>
@@ -181,6 +193,12 @@ export default function Profile() {
               <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Email Address</strong>
               <div style={{ fontSize: '15px', color: 'var(--text)' }}>{user.email}</div>
             </div>
+            {isStudent && user.enrollmentNumber && (
+              <div>
+                <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Enrollment Number</strong>
+                <div style={{ fontSize: '15px', color: 'var(--text)' }}>{user.enrollmentNumber}</div>
+              </div>
+            )}
             {isStudent && user.universityId && (
               <div>
                 <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>University ID</strong>
