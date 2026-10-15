@@ -496,7 +496,7 @@ router.delete(
 // POST /api/events/reminders/process
 // ══════════════════════════════════════════════════════════════════════════════
 
-router.post('/reminders/process', requireAuth, async (_req, res) => {
+router.post('/reminders/process', requireAuth, requireAnyRole('club_admin', 'faculty_coordinator'), async (_req, res) => {
   try {
     const processed = await checkAndSendEventReminders();
     return res.status(200).json({

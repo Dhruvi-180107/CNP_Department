@@ -319,16 +319,70 @@ async function run() {
     // Delete past event
     await Event.findByIdAndDelete(pastEvent._id);
 
-    // ── CHECKLIST 9: Testing Trigger Endpoint (POST /api/events/reminders/process) ─
-    console.log('\n--- 9. Testing Trigger API Endpoint (/api/events/reminders/process) ---');
-    const triggerRes = await fetch(`${BASE}/events/reminders/process`, {
+    // ── CHECKLIST 9: Testing Trigger Endpoint — Role Authorization (POST /api/events/reminders/process) ─
+    console.log('\n--- 9. Testing Role Authorization on /api/events/reminders/process ---');
+
+    // 9a. Unauthenticated request must be rejected with 401
+    const noAuthRes = await fetch(`${BASE}/events/reminders/process`, { method: 'POST' });
+    assert(noAuthRes.status === 401, '9a: Unauthenticated request rejected with HTTP 401');
+
+    // 9b. Invalid / expired token must be rejected with 401
+    const badTokenRes = await fetch(`${BASE}/events/reminders/process`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer this.is.not.a.valid.jwt' },
+    });
+    assert(badTokenRes.status === 401, '9b: Invalid/expired token rejected with HTTP 401');
+
+    // 9c. Authenticated student must be forbidden (403)
+    const studentTriggerRes = await fetch(`${BASE}/events/reminders/process`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${student.token}` },
+    });
+    assert(studentTriggerRes.status === 403, '9c: Authenticated student receives HTTP 403 Forbidden');
+
+    // 9d. faculty_mentor must be forbidden (403)
+    const mentorTriggerRes = await fetch(`${BASE}/events/reminders/process`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${facultyMentor.token}` },
+    });
+    assert(mentorTriggerRes.status === 403, '9d: faculty_mentor receives HTTP 403 Forbidden');
+
+    // 9e. project_admin must be forbidden (403)
+    const projAdminTriggerRes = await fetch(`${BASE}/events/reminders/process`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${projectAdmin.token}` },
+    });
+    assert(projAdminTriggerRes.status === 403, '9e: project_admin receives HTTP 403 Forbidden');
+
+    // 9f. club_admin must be allowed (200)
+    const clubAdminTriggerRes = await fetch(`${BASE}/events/reminders/process`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${clubAdmin.token}` },
     });
-    const triggerData = await triggerRes.json();
-    assert(triggerRes.status === 200, 'POST /events/reminders/process returned HTTP 200');
-    assert(triggerData.success === true, 'Response has success: true');
-    assert(typeof triggerData.processed === 'number', 'Response returns processed count number');
+    const clubAdminTriggerData = await clubAdminTriggerRes.json();
+    assert(clubAdminTriggerRes.status === 200, '9f: club_admin receives HTTP 200 OK');
+    assert(clubAdminTriggerData.success === true, '9f: Response has success: true');
+    assert(typeof clubAdminTriggerData.processed === 'number', '9f: Response returns numeric processed count');
+
+    // 9g. faculty_coordinator must be allowed (200)
+    const coordTriggerRes = await fetch(`${BASE}/events/reminders/process`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${facultyCoord.token}` },
+    });
+    const coordTriggerData = await coordTriggerRes.json();
+    assert(coordTriggerRes.status === 200, '9g: faculty_coordinator receives HTTP 200 OK');
+    assert(coordTriggerData.success === true, '9g: Response has success: true');
+    assert(typeof coordTriggerData.processed === 'number', '9g: Response returns numeric processed count');
+
+    // 9h. Repeated requests remain idempotent (already-sent reminders are not re-sent)
+    const repeatTriggerRes = await fetch(`${BASE}/events/reminders/process`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${clubAdmin.token}` },
+    });
+    const repeatTriggerData = await repeatTriggerRes.json();
+    assert(repeatTriggerRes.status === 200, '9h: Repeated trigger request returns HTTP 200 (idempotent)');
+    assert(repeatTriggerData.processed === 0, '9h: Repeated trigger reports 0 events processed (no duplicates)');
+
 
     // ── CHECKLIST 10: Existing Notification Workflows (Read / Unread Counts) ──
     console.log('\n--- 10. Testing Notification Inbox Operations (Read / Unread Counts) ---');
