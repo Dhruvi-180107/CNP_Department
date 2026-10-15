@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, isProfileComplete } from '../../context/AuthContext';
 import { api } from '../../services/api';
@@ -10,9 +10,21 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [activeSlide, setActiveSlide] = useState(0);
+  const [isStoryHovered, setIsStoryHovered] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const isSubmittingRef = useRef(false);
+
+  useEffect(() => {
+    if (isStoryHovered) return;
+
+    const timer = window.setInterval(() => {
+      setActiveSlide(current => (current + 1) % 3);
+    }, 4000);
+
+    return () => window.clearInterval(timer);
+  }, [activeSlide, isStoryHovered]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -61,7 +73,11 @@ export default function Login() {
   return (
     <main className="login-page">
       <section className="login-shell" aria-label="CNP Department sign in">
-        <div className="login-story">
+        <div
+          className="login-story"
+          onMouseEnter={() => setIsStoryHovered(true)}
+          onMouseLeave={() => setIsStoryHovered(false)}
+        >
           <div className="login-brand">
             <span className="login-brand-mark" aria-hidden="true">
               <svg viewBox="0 0 28 28" fill="none">
@@ -72,40 +88,92 @@ export default function Login() {
             <span>CNP Department</span>
           </div>
 
-          <div className="login-story-copy">
-            <p className="login-eyebrow">Student Clubs <span aria-hidden="true">·</span> GUIITAR Projects</p>
-            <h1>Your campus work,<br />connected.</h1>
-            <p className="login-story-description">
-              Access student-managed clubs and GUIITAR projects through one college platform.
-            </p>
+          <div className="login-story-copy" aria-live="off">
+            <div key={activeSlide} className="login-slide-copy">
+              {activeSlide === 0 ? (
+                <>
+                  <p className="login-eyebrow">Student Clubs <span aria-hidden="true">·</span> GUIITAR Projects</p>
+                  <h1>Your campus work,<br />connected.</h1>
+                  <p className="login-story-description">Access student-managed clubs and GUIITAR projects through one college platform.</p>
+                </>
+              ) : activeSlide === 1 ? (
+                <>
+                  <p className="login-eyebrow">Student Managed Clubs</p>
+                  <h1>Find your people.<br />Build your community.</h1>
+                  <p className="login-story-description">Discover student clubs, connect with members, and explore opportunities to participate in campus activities.</p>
+                </>
+              ) : (
+                <>
+                  <p className="login-eyebrow">GUIITAR Projects</p>
+                  <h1>Ideas into<br />real-world projects.</h1>
+                  <p className="login-story-description">Explore student-built projects, discover creative work, and connect with the innovation happening across campus.</p>
+                </>
+              )}
+            </div>
           </div>
 
           <div className="campus-illustration" aria-hidden="true">
-            <div className="illustration-orbit illustration-orbit-one" />
-            <div className="illustration-orbit illustration-orbit-two" />
-            <div className="illustration-note illustration-note-club">
-              <span className="note-icon note-icon-club"><svg viewBox="0 0 24 24" fill="none"><path d="M12 12.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4ZM5.8 19.2c.5-2.5 2.8-4.2 6.2-4.2s5.7 1.7 6.2 4.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg></span>
-              <span><strong>Student clubs</strong><small>Ideas take shape together</small></span>
-            </div>
-            <div className="illustration-note illustration-note-project">
-              <span className="note-icon note-icon-project"><svg viewBox="0 0 24 24" fill="none"><path d="m8.5 8-4 4 4 4m7-8 4 4-4 4m-2.2-10-2.6 12" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg></span>
-              <span><strong>GUIITAR projects</strong><small>Built by the campus community</small></span>
-            </div>
-            <div className="illustration-campus">
-              <div className="campus-sun" />
-              <div className="campus-building">
-                <div className="building-roof" />
-                <div className="building-top"><span /><span /><span /></div>
-                <div className="building-columns"><i /><i /><i /><i /><i /></div>
-                <div className="building-steps" />
+            {activeSlide === 0 ? (
+              <>
+                <div className="illustration-orbit illustration-orbit-one" />
+                <div className="illustration-orbit illustration-orbit-two" />
+                <div className="illustration-note illustration-note-club">
+                  <span className="note-icon note-icon-club"><svg viewBox="0 0 24 24" fill="none"><path d="M12 12.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4ZM5.8 19.2c.5-2.5 2.8-4.2 6.2-4.2s5.7 1.7 6.2 4.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg></span>
+                  <span><strong>Student clubs</strong><small>Ideas take shape together</small></span>
+                </div>
+                <div className="illustration-note illustration-note-project">
+                  <span className="note-icon note-icon-project"><svg viewBox="0 0 24 24" fill="none"><path d="m8.5 8-4 4 4 4m7-8 4 4-4 4m-2.2-10-2.6 12" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg></span>
+                  <span><strong>GUIITAR projects</strong><small>Built by the campus community</small></span>
+                </div>
+                <div className="illustration-campus">
+                  <div className="campus-sun" />
+                  <div className="campus-building">
+                    <div className="building-roof" />
+                    <div className="building-top"><span /><span /><span /></div>
+                    <div className="building-columns"><i /><i /><i /><i /><i /></div>
+                    <div className="building-steps" />
+                  </div>
+                  <div className="campus-ground" />
+                  <span className="campus-spark campus-spark-one">✳</span>
+                  <span className="campus-spark campus-spark-two">✦</span>
+                </div>
+              </>
+            ) : activeSlide === 1 ? (
+              <div className="community-illustration">
+                <div className="community-links" />
+                <span className="community-node node-one">✦</span>
+                <span className="community-node node-two">◉</span>
+                <span className="community-node node-three">✳</span>
+                <span className="community-node node-four">◌</span>
+                <div className="community-card community-card-one"><span>CREATIVE</span><i /><i /><i /></div>
+                <div className="community-card community-card-two"><span>COMMUNITY</span><i /><i /><i /></div>
               </div>
-              <div className="campus-ground" />
-              <span className="campus-spark campus-spark-one">✳</span>
-              <span className="campus-spark campus-spark-two">✦</span>
-            </div>
+            ) : (
+              <div className="project-illustration">
+                <div className="project-grid" />
+                <div className="project-code-card"><span /><span /><span /><i /><i /><i /><i /></div>
+                <div className="project-node project-node-one" /><div className="project-node project-node-two" /><div className="project-node project-node-three" />
+                <div className="project-link project-link-one" /><div className="project-link project-link-two" />
+                <div className="project-chip">IDEA <b>→</b> IMPACT</div>
+              </div>
+            )}
           </div>
 
-          <p className="login-audience">For authorized students, faculty, and college officials</p>
+          <div className="login-story-footer">
+            <p>{activeSlide === 0 ? 'For authorized students, faculty, and college officials' : activeSlide === 1 ? 'Student communities. Shared interests. Real connections.' : 'Built by students. Driven by ideas.'}</p>
+            <div className="login-slide-indicators" role="group" aria-label="Choose information slide">
+              {[0, 1, 2].map(index => (
+                <button
+                  key={index}
+                  type="button"
+                  className={index === activeSlide ? 'active' : ''}
+                  onClick={() => setActiveSlide(index)}
+                  aria-label={`Show slide ${index + 1}`}
+                  aria-pressed={index === activeSlide}
+                />
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="login-form-side">
