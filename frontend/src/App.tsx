@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth, isProfileComplete } from './context/AuthContext';
 import { AppLayout } from './components/layout/AppLayout';
 import { ProtectedRoute, RoleProtectedRoute } from './components/ProtectedRoute';
@@ -16,10 +17,29 @@ import Login from './pages/Auth/Login';
 import Register from './pages/Auth/Register';
 import MaterialRequests from './pages/MaterialRequests/MaterialRequests';
 import Inventory from './pages/Inventory/Inventory';
+import LoadingScreen from './components/LoadingScreen';
+
+function RouteTransition() {
+  const location = useLocation();
+  const previousPath = useRef(location.pathname);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
+  useEffect(() => {
+    if (previousPath.current === location.pathname) return;
+    previousPath.current = location.pathname;
+    setIsTransitioning(true);
+
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const timeout = window.setTimeout(() => setIsTransitioning(false), reducedMotion ? 150 : 700);
+    return () => window.clearTimeout(timeout);
+  }, [location.pathname]);
+
+  return isTransitioning ? <LoadingScreen /> : null;
+}
 
 function AuthGuard() {
   const { user, loading } = useAuth();
-  if (loading) return <div className="empty-state"><div className="spinner"></div><p>Loading...</p></div>;
+  if (loading) return <LoadingScreen />;
   if (user) {
     return <Navigate to={isProfileComplete(user) ? "/dashboard" : "/profile"} replace />;
   }
@@ -28,7 +48,7 @@ function AuthGuard() {
 
 function AuthRegisterGuard() {
   const { user, loading } = useAuth();
-  if (loading) return <div className="empty-state"><div className="spinner"></div><p>Loading...</p></div>;
+  if (loading) return <LoadingScreen />;
   if (user) {
     return <Navigate to={isProfileComplete(user) ? "/dashboard" : "/profile"} replace />;
   }
@@ -66,6 +86,7 @@ export default function App() {
             </Route>
           </Route>
         </Routes>
+        <RouteTransition />
       </BrowserRouter>
     </AuthProvider>
   );

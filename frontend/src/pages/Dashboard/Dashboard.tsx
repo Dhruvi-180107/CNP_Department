@@ -3,18 +3,13 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
 import { UserDisplay } from '../../components/UserDisplay';
-import { StudentClubCard } from '../../components/clubs/StudentClubCard';
-import { StudentProjectCard } from '../../components/projects/StudentProjectCard';
 import { EventCard } from '../../components/events/EventCard';
 import { EventForm } from '../../components/events/EventForm';
+import { StudentDashboardPage } from './StudentDashboardPage';
 
 export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  
-  // Student State
-  const [myClubs, setMyClubs] = useState<any[]>([]);
-  const [myProjects, setMyProjects] = useState<any[]>([]);
   
   // FC & Club Admin State
   const [coordinatorClubs, setCoordinatorClubs] = useState<any[]>([]);
@@ -42,35 +37,7 @@ export default function Dashboard() {
 
   const load = async () => {
       try {
-        if (user?.role === 'student') {
-          const [clubs, projectMemberships] = await Promise.all([
-            api<any>('GET', '/clubs').then(res => res.data),
-            api<any>('GET', `/users/${user._id}/projects`).then(res => res.data).catch(() => [])
-          ]);
-          
-          const memberships = [];
-          for (const c of clubs) {
-            const mems = await api<any>('GET', `/clubs/${c._id}/members`).then(res => res.data).catch(() => []);
-            const me = mems.find((m: any) => (m.studentId?._id || m.studentId) === user._id);
-            if (me) memberships.push({ club: c, membership: me });
-          }
-          setMyClubs(memberships);
-
-          // For each project, fetch its assigned faculty mentors
-          const projectsWithMentors = await Promise.all(
-            (projectMemberships || []).map(async (item: any) => {
-              const p = item.project;
-              if (!p) return null;
-              try {
-                const mentorsRes = await api<any>('GET', `/projects/${p._id}/mentors`);
-                return { ...p, mentors: mentorsRes.data || [] };
-              } catch {
-                return { ...p, mentors: [] };
-              }
-            })
-          );
-          setMyProjects(projectsWithMentors.filter(Boolean));
-        } else if (user?.role === 'faculty_coordinator') {
+        if (user?.role === 'faculty_coordinator') {
           setCoordinatorError(null);
           let assignedClubs: any[] = [];
           try {
@@ -171,8 +138,10 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    load();
+    if (user?.role !== 'student') void load();
   }, [user]);
+
+  if (user?.role === 'student') return <StudentDashboardPage user={user} />;
 
   if (loading) return <div className="spinner"></div>;
 
@@ -181,100 +150,6 @@ export default function Dashboard() {
       <h2 className="section-title">📊 Dashboard</h2>
       <p className="section-sub">Welcome back, {user?.name} ({user?.role})</p>
       
-      {user?.role === 'student' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '36px' }}>
-          {/* Clubs Section */}
-          <section className="student-dashboard-section">
-            <div className="student-dashboard-section-header">
-              <div className="student-dashboard-section-title-wrap">
-                <h3 className="student-section-title">
-                  <span>🏛</span> Clubs
-                </h3>
-                <span className="badge badge-primary">{myClubs.length}</span>
-              </div>
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => navigate('/clubs')}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-              >
-                Explore Clubs &rarr;
-              </button>
-            </div>
-
-            {myClubs.length > 0 ? (
-              <div className="student-cards-grid">
-                {myClubs.map(mc => (
-                  <StudentClubCard
-                    key={mc.club._id}
-                    club={mc.club}
-                    membership={mc.membership}
-                    onClick={() => navigate(`/clubs/${mc.club._id}`)}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="card empty-state" style={{ padding: '48px 24px', textAlign: 'center' }}>
-                <div style={{ fontSize: '36px', marginBottom: '10px' }}>🏛</div>
-                <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: '15px', marginBottom: '6px' }}>
-                  Not a member of any clubs yet
-                </div>
-                <p style={{ fontSize: '13px', color: 'var(--text-faint)', maxWidth: '420px', margin: '0 auto 18px auto' }}>
-                  Explore student clubs to collaborate, build projects, and participate in technical and cultural events.
-                </p>
-                <button className="btn btn-primary btn-sm" onClick={() => navigate('/clubs')}>
-                  Explore Clubs
-                </button>
-              </div>
-            )}
-          </section>
-
-          {/* Projects Section */}
-          <section className="student-dashboard-section">
-            <div className="student-dashboard-section-header">
-              <div className="student-dashboard-section-title-wrap">
-                <h3 className="student-section-title">
-                  <span>📋</span> Projects
-                </h3>
-                <span className="badge badge-primary">{myProjects.length}</span>
-              </div>
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => navigate('/projects')}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-              >
-                Explore Projects &rarr;
-              </button>
-            </div>
-
-            {myProjects.length > 0 ? (
-              <div className="student-cards-grid">
-                {myProjects.map(p => (
-                  <StudentProjectCard
-                    key={p._id}
-                    project={p}
-                    currentUserId={user._id}
-                    onClick={() => navigate(`/projects/${p._id}`)}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="card empty-state" style={{ padding: '48px 24px', textAlign: 'center' }}>
-                <div style={{ fontSize: '36px', marginBottom: '10px' }}>📋</div>
-                <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: '15px', marginBottom: '6px' }}>
-                  Not assigned to any projects yet
-                </div>
-                <p style={{ fontSize: '13px', color: 'var(--text-faint)', maxWidth: '420px', margin: '0 auto 18px auto' }}>
-                  Get assigned to department hardware and software projects to collaborate with faculty mentors and peer team members.
-                </p>
-                <button className="btn btn-primary btn-sm" onClick={() => navigate('/projects')}>
-                  Explore Projects
-                </button>
-              </div>
-            )}
-          </section>
-        </div>
-      )}
-
       {user?.role === 'faculty_coordinator' && (
         <div className="dashboard-grid">
           {/* Assigned Clubs Section (Multi-Card Grid, matching Faculty Mentor layout) */}

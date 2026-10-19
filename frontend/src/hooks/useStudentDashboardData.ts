@@ -1,0 +1,171 @@
+import { useCallback, useEffect, useState } from 'react';
+import { api } from '../services/api';
+import type { User } from '../types';
+import type {
+  StudentClubMembership,
+  StudentDashboardData,
+  StudentJoinRequest,
+  ProjectMentorAssignment,
+  ClubMembershipRecord,
+  StudentNotificationItem,
+  StudentProjectWithMentors,
+} from '../types/studentDashboard';
+
+type ApiList<T> = { success?: boolean; data?: T };
+
+function memberStudentId(member: { studentId?: string | { _id?: string } }): string | undefined {
+  const sid = member.studentId;
+  if (!sid) return undefined;
+  return typeof sid === 'object' ? sid._id : sid;
+}
+
+async function resolveClubMemberships(userId: string): Promise<{
+  clubs: StudentClubMembership[];
+  error?: string;
+}> {
+  try {
+    const clubsRes = await api<ApiList<StudentClubMembership['club'][]>>('GET', '/clubs');
+    const allClubs = clubsRes.data ?? [];
+
+    const membershipResults = await Promise.all(
+      allClubs.map(async (club) => {
+        try {
+          const memRes = await api<ApiList<ClubMembershipRecord[]>>(
+            'GET',
+            `/clubs/${club._id}/members`
+          );
+          const me = (memRes.data ?? []).find((m) => memberStudentId(m) === userId);
+          if (!me) return { membership: null };
+          return { membership: { club, membership: me } };
+        } catch (err: unknown) {
+          return { membership: null, error: err instanceof Error ? err.message : 'Membership could not be checked.' };
+        }
+      })
+    );
+
+    const membershipError = membershipResults.find((result) => result.error)?.error;
+    return {
+      clubs: membershipResults.flatMap((result) => result.membership ? [result.membership] : []),
+      error: membershipError ? 'Some club memberships could not be verified. Try again.' : undefined,
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Could not load club memberships.';
+    return { clubs: [], error: message };
+  }
+}
+
+async function resolveProjects(userId: string): Promise<{
+  projects: StudentProjectWithMentors[];
+  error?: string;
+}> {
+  try {
+    const res = await api<ApiList<{ project?: Omit<StudentProjectWithMentors, 'mentors'> | null }[]>>(
+      'GET',
+      `/users/${userId}/projects`
+    );
+    const items = res.data ?? [];
+
+    const projects = await Promise.all(
+      items.map(async (item) => {
+        const p = item.project;
+        if (!p?._id) return null;
+        try {
+          const mentorsRes = await api<ApiList<ProjectMentorAssignment[]>>(
+            'GET',
+            `/projects/${p._id}/mentors`
+          );
+          return { ...p, mentors: mentorsRes.data ?? [] } as StudentProjectWithMentors;
+        } catch {
+          return { ...p, mentors: [] } as StudentProjectWithMentors;
+        }
+      })
+    );
+
+    return { projects: projects.filter(Boolean) as StudentProjectWithMentors[] };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Could not load projects.';
+    return { projects: [], error: message };
+  }
+}
+
+export function useStudentDashboardData(user: User): StudentDashboardData {
+  const [clubs, setClubs] = useState<StudentClubMembership[]>([]);
+  const [projects, setProjects] = useState<StudentProjectWithMentors[]>([]);
+  const [upcomingEvents, setUpcomingEvents] = useState<unknown[]>([]);
+  const [joinRequests, setJoinRequests] = useState<StudentJoinRequest[]>([]);
+  const [notifications, setNotifications] = useState<StudentNotificationItem[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [errors, setErrors] = useState<StudentDashboardData['errors']>({});
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setErrors({});
+
+    const [clubResult, projectResult, eventsResult, requestsResult, notifResult, countResult] =
+      await Promise.all([
+        resolveClubMemberships(user._id),
+        resolveProjects(user._id),
+        api<ApiList<unknown[]>>('GET', '/events/upcoming').catch((e: Error) => ({ error: e.message })),
+        api<{ data?: StudentJoinRequest[] }>('GET', '/join-requests/student').catch((e: Error) => ({
+          error: e.message,
+        })),
+        api<{ data?: StudentNotificationItem[] }>('GET', '/notifications?limit=5').catch((e: Error) => ({
+          error: e.message,
+        })),
+        api<{ count?: number }>('GET', '/notifications/unread-count').catch((e: Error) => ({ error: e.message })),
+      ]);
+
+    setClubs(clubResult.clubs);
+    setProjects(projectResult.projects);
+
+    const nextErrors: StudentDashboardData['errors'] = {};
+    if (clubResult.error) nextErrors.clubs = clubResult.error;
+    if (projectResult.error) nextErrors.projects = projectResult.error;
+
+    if ('error' in eventsResult) {
+      nextErrors.events = eventsResult.error as string;
+      setUpcomingEvents([]);
+    } else {
+      setUpcomingEvents(eventsResult.data ?? []);
+    }
+
+    if ('error' in requestsResult) {
+      nextErrors.requests = requestsResult.error as string;
+      setJoinRequests([]);
+    } else {
+      setJoinRequests(requestsResult.data ?? []);
+    }
+
+    if ('error' in notifResult) {
+      nextErrors.notifications = notifResult.error as string;
+      setNotifications([]);
+    } else {
+      setNotifications(notifResult.data ?? []);
+    }
+
+    if ('error' in countResult) {
+      nextErrors.notifications = nextErrors.notifications || countResult.error;
+    }
+    setUnreadCount('count' in countResult && typeof countResult.count === 'number' ? countResult.count : 0);
+    setErrors(nextErrors);
+    setLoading(false);
+  }, [user]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return {
+    user,
+    clubs,
+    projects,
+    upcomingEvents,
+    joinRequests,
+    notifications,
+    unreadCount,
+    loading,
+    errors,
+    refetch: load,
+  };
+}
