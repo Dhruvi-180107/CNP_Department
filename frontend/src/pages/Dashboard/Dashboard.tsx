@@ -6,10 +6,12 @@ import { UserDisplay } from '../../components/UserDisplay';
 import { EventCard } from '../../components/events/EventCard';
 import { EventForm } from '../../components/events/EventForm';
 import { StudentDashboardPage } from './StudentDashboardPage';
+import { isEventPast, useLocalDay } from '../../eventDate';
 
 export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const today = useLocalDay();
   
   // FC & Club Admin State
   const [coordinatorClubs, setCoordinatorClubs] = useState<any[]>([]);
@@ -64,12 +66,11 @@ export default function Dashboard() {
           const allPendingReqs = reqResults.flat().filter((r: any) => r.status === 'pending');
           setPendingRequests(allPendingReqs);
 
-          const now = Date.now();
           const upcoming = allEvts
-            .filter((e: any) => new Date(e.eventDate || e.date).getTime() >= now)
+            .filter((e: any) => !isEventPast(e.eventDate || e.date))
             .sort((a: any, b: any) => new Date(a.eventDate || a.date).getTime() - new Date(b.eventDate || b.date).getTime());
           const past = allEvts
-            .filter((e: any) => new Date(e.eventDate || e.date).getTime() < now)
+            .filter((e: any) => isEventPast(e.eventDate || e.date))
             .sort((a: any, b: any) => new Date(b.eventDate || b.date).getTime() - new Date(a.eventDate || a.date).getTime());
 
           setUpcomingEvents(upcoming);
@@ -92,12 +93,11 @@ export default function Dashboard() {
             withoutCoordinator: allClubs.filter((c: any) => !c.facultyCoordinatorId).length,
           });
 
-          const now = Date.now();
           const upcoming = allEvts
-            .filter((e: any) => new Date(e.eventDate || e.date).getTime() >= now)
+            .filter((e: any) => !isEventPast(e.eventDate || e.date))
             .sort((a: any, b: any) => new Date(a.eventDate || a.date).getTime() - new Date(b.eventDate || b.date).getTime());
           const past = allEvts
-            .filter((e: any) => new Date(e.eventDate || e.date).getTime() < now)
+            .filter((e: any) => isEventPast(e.eventDate || e.date))
             .sort((a: any, b: any) => new Date(b.eventDate || b.date).getTime() - new Date(a.eventDate || a.date).getTime());
 
           setUpcomingEvents(upcoming);
@@ -139,7 +139,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (user?.role !== 'student') void load();
-  }, [user]);
+  }, [user, today]);
 
   if (user?.role === 'student') return <StudentDashboardPage user={user} />;
 

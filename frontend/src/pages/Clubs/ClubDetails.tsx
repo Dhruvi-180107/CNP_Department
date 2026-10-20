@@ -7,11 +7,13 @@ import { ClubManagement } from '../../components/clubs/ClubManagement';
 import { MemberItem } from '../../components/clubs/MemberItem';
 import { EventCard } from '../../components/events/EventCard';
 import { EventForm } from '../../components/events/EventForm';
+import { isEventPast, useLocalDay } from '../../eventDate';
 
 export default function ClubDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const today = useLocalDay();
   
   const [club, setClub] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);
@@ -33,16 +35,15 @@ export default function ClubDetails() {
       setMembers(mems);
 
       const evts = await api<any>('GET', `/clubs/${id}/events`).then(res => res.data).catch(() => []);
-      const now = Date.now();
       const clubEvts = evts.filter((e: any) => {
         const eClubId = typeof e.clubId === 'object' ? e.clubId?._id : e.clubId;
         return !eClubId || eClubId === id;
       });
       const upcoming = clubEvts
-        .filter((e: any) => new Date(e.eventDate || e.date).getTime() >= now)
+        .filter((e: any) => !isEventPast(e.eventDate || e.date))
         .sort((a: any, b: any) => new Date(a.eventDate || a.date).getTime() - new Date(b.eventDate || b.date).getTime());
       const past = clubEvts
-        .filter((e: any) => new Date(e.eventDate || e.date).getTime() < now)
+        .filter((e: any) => isEventPast(e.eventDate || e.date))
         .sort((a: any, b: any) => new Date(b.eventDate || b.date).getTime() - new Date(a.eventDate || a.date).getTime());
       setUpcomingEvents(upcoming);
       setPastEvents(past);
@@ -65,7 +66,7 @@ export default function ClubDetails() {
 
   useEffect(() => {
     loadClubAndMembers();
-  }, [id, user, navigate]);
+  }, [id, user, navigate, today]);
 
   useEffect(() => {
     if (!loading && window.location.hash) {

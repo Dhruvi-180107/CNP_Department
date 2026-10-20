@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { localDayStartIso, useLocalDay } from '../eventDate';
 import { api } from '../services/api';
 import type { User } from '../types';
 import type {
@@ -89,6 +90,7 @@ async function resolveProjects(userId: string): Promise<{
 }
 
 export function useStudentDashboardData(user: User): StudentDashboardData {
+  const today = useLocalDay();
   const [clubs, setClubs] = useState<StudentClubMembership[]>([]);
   const [projects, setProjects] = useState<StudentProjectWithMentors[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<unknown[]>([]);
@@ -106,7 +108,7 @@ export function useStudentDashboardData(user: User): StudentDashboardData {
       await Promise.all([
         resolveClubMemberships(user._id),
         resolveProjects(user._id),
-        api<ApiList<unknown[]>>('GET', '/events/upcoming').catch((e: Error) => ({ error: e.message })),
+        api<ApiList<unknown[]>>('GET', `/events/upcoming?from=${encodeURIComponent(localDayStartIso())}`).catch((e: Error) => ({ error: e.message })),
         api<{ data?: StudentJoinRequest[] }>('GET', '/join-requests/student').catch((e: Error) => ({
           error: e.message,
         })),
@@ -150,7 +152,7 @@ export function useStudentDashboardData(user: User): StudentDashboardData {
     setUnreadCount('count' in countResult && typeof countResult.count === 'number' ? countResult.count : 0);
     setErrors(nextErrors);
     setLoading(false);
-  }, [user]);
+  }, [user, today]);
 
   useEffect(() => {
     load();
