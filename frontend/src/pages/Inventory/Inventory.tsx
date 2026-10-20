@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import { UserDisplay } from '../../components/UserDisplay';
 import { api } from '../../services/api';
+import { usePageLoading } from '../../context/LoadingContext';
+import LoadingScreen from '../../components/LoadingScreen';
 
 export default function Inventory() {
+  const { setPageLoading } = usePageLoading();
   const [items, setItems] = useState<any[]>([]);
   const [allocations, setAllocations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -11,6 +14,7 @@ export default function Inventory() {
 
   const loadData = async () => {
     try {
+      setPageLoading(true);
       const [invRes, allocRes] = await Promise.all([
         api<any>('GET', '/inventory'),
         api<any>('GET', '/allocations').catch(() => ({ data: [] }))
@@ -21,6 +25,7 @@ export default function Inventory() {
       console.error(e);
     } finally {
       setLoading(false);
+      setPageLoading(false);
     }
   };
 
@@ -60,7 +65,7 @@ export default function Inventory() {
     }
   };
 
-  if (loading) return <div className="spinner" style={{ margin: '40px auto', display: 'block' }}></div>;
+  if (loading) return <LoadingScreen isReady={!loading} />;
 
   return (
     <div className="page-container">

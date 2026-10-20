@@ -8,11 +8,14 @@ import { MemberItem } from '../../components/clubs/MemberItem';
 import { EventCard } from '../../components/events/EventCard';
 import { EventForm } from '../../components/events/EventForm';
 import { isEventPast, useLocalDay } from '../../eventDate';
+import { usePageLoading } from '../../context/LoadingContext';
+import LoadingScreen from '../../components/LoadingScreen';
 
 export default function ClubDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { setPageLoading } = usePageLoading();
   const today = useLocalDay();
   
   const [club, setClub] = useState<any>(null);
@@ -26,6 +29,7 @@ export default function ClubDetails() {
   const [loading, setLoading] = useState(true);
 
   const loadClubAndMembers = async () => {
+    setPageLoading(true);
     try {
       const c = await api<any>('GET', `/clubs`).then(res => res.data.find((x: any) => x._id === id));
       if (!c) throw new Error("Not found");
@@ -61,6 +65,7 @@ export default function ClubDetails() {
       navigate('/clubs');
     } finally {
       setLoading(false);
+      setPageLoading(false);
     }
   };
 
@@ -87,7 +92,7 @@ export default function ClubDetails() {
     }
   };
 
-  if (loading) return <div className="spinner"></div>;
+  if (loading) return <LoadingScreen isReady={!loading} />;
   if (!club) return null;
 
   const isCoordinator = user?.role === 'faculty_coordinator' && 

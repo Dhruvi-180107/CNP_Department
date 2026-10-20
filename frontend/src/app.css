@@ -1703,8 +1703,11 @@ input[type="number"]:focus {
   }
 }
 
-/* Loader adapted from the supplied 4:3 outlined-frame preview. */
-.cnp-loading-screen {
+/* ==========================================================================
+   CNP Department Industrial Steel Access Hatch Loader
+   ========================================================================== */
+
+.cnp-steel-loader-backdrop {
   position: fixed;
   z-index: 11000;
   inset: 0;
@@ -1712,49 +1715,548 @@ input[type="number"]:focus {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 18px;
-  background: radial-gradient(ellipse at 50% 46%, #ffffff 0%, #f8faff 56%, #edf2f9 100%);
-  animation: cnp-screen-arrive .7s ease both;
+  background: radial-gradient(ellipse at 50% 48%, #17243c 0%, #0d1424 60%, #060a13 100%);
+  animation: cnp-loader-backdrop-fadein 0.2s ease-out forwards;
+  transition: opacity 0.38s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  user-select: none;
 }
 
-.cnp-loading-mark {
-  width: clamp(76px, 10vw, 112px);
-  height: auto;
-  overflow: visible;
+.cnp-steel-loader-backdrop.inline {
+  position: relative;
+  z-index: 100;
+  min-height: 380px;
+  background: transparent;
 }
 
-.cnp-loading-frame {
-  fill: none;
-  stroke: #258fea;
-  stroke-width: 9;
-  stroke-linecap: square;
-  stroke-linejoin: miter;
-  stroke-dasharray: 496;
-  stroke-dashoffset: 496;
-  animation: cnp-frame-draw 1.05s cubic-bezier(.62,.02,.31,.99) infinite;
+.cnp-steel-loader-backdrop.stage-swing-open {
+  opacity: 0;
+  pointer-events: none;
 }
 
-.cnp-loading-caption {
-  color: #59677f;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: .025em;
-}
-
-@keyframes cnp-screen-arrive {
+@keyframes cnp-loader-backdrop-fadein {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 
-@keyframes cnp-frame-draw {
-  0% { stroke-dashoffset: 496; opacity: .3; }
-  58%, 78% { stroke-dashoffset: 0; opacity: 1; }
-  100% { stroke-dashoffset: -496; opacity: .25; }
+.cnp-steel-loader-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  perspective: 1200px;
 }
 
+/* Outer Wall Recess & Frame Assembly */
+.cnp-steel-hatch-wrapper {
+  position: relative;
+  width: clamp(300px, 86vw, 440px);
+  height: clamp(200px, 58vw, 280px);
+  perspective: 1400px;
+  transform-style: preserve-3d;
+}
+
+/* Recessed wall frame behind the door with glowing reveal chamber */
+.cnp-steel-wall-frame {
+  position: absolute;
+  inset: 0;
+  border-radius: 9px;
+  background: #080d17;
+  border: 2px solid #1a253c;
+  box-shadow:
+    inset 0 4px 16px rgba(0, 0, 0, 0.85),
+    0 20px 45px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+}
+
+/* Inner glow that pours out when the hatch door swings open */
+.cnp-steel-wall-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 60% 50%, rgba(245, 166, 35, 0.35) 0%, rgba(37, 143, 234, 0.2) 40%, rgba(15, 23, 42, 0.95) 100%);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.hatch-open .cnp-steel-wall-frame::after {
+  opacity: 1;
+}
+
+/* Hinged Steel Door Panel */
+.cnp-steel-door {
+  position: absolute;
+  inset: 0;
+  transform-origin: 10px center;
+  transform-style: preserve-3d;
+  transition: transform 0.45s cubic-bezier(0.18, 0.9, 0.28, 1);
+  will-change: transform;
+}
+
+.cnp-steel-door.door-swinging {
+  transform: rotateY(-86deg) translateZ(10px);
+  box-shadow: -20px 0 35px rgba(0, 0, 0, 0.7);
+}
+
+/* Heavy Industrial Hinges on the Left Edge */
+.cnp-steel-hinge {
+  position: absolute;
+  left: 3px;
+  width: 14px;
+  height: 40px;
+  background: linear-gradient(180deg, #2a3a5a 0%, #151e30 50%, #2a3a5a 100%);
+  border-radius: 3px;
+  border: 1px solid #3d5179;
+  box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.6);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cnp-steel-hinge-top {
+  top: 42px;
+}
+
+.cnp-steel-hinge-bottom {
+  bottom: 42px;
+}
+
+.cnp-hinge-pin {
+  width: 4px;
+  height: 28px;
+  background: linear-gradient(90deg, #ffd166 0%, #f5a623 50%, #b7791f 100%);
+  border-radius: 2px;
+  box-shadow: 0 0 3px rgba(245, 166, 35, 0.6);
+}
+
+/* Brushed Steel Door Face */
+.cnp-steel-door-face {
+  position: absolute;
+  inset: 4px 4px 4px 10px;
+  border-radius: 6px;
+  background:
+    linear-gradient(115deg, rgba(255,255,255,0.08) 0%, transparent 35%, rgba(255,255,255,0.12) 55%, transparent 75%),
+    linear-gradient(145deg, #222f48 0%, #172134 50%, #101827 100%);
+  border: 1.5px solid #36486d;
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.25),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.6),
+    0 10px 24px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px 20px;
+  overflow: hidden;
+}
+
+/* Door Face Micro-Rivets */
+.cnp-door-rivets-top,
+.cnp-door-rivets-bottom {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  height: 3px;
+  background-image: radial-gradient(circle, #7e91b3 1.2px, transparent 1.2px);
+  background-size: 24px 3px;
+  opacity: 0.45;
+}
+
+.cnp-door-rivets-top { top: 6px; }
+.cnp-door-rivets-bottom { bottom: 6px; }
+
+/* Stamped Door Header & Footer Markings */
+.cnp-door-header,
+.cnp-door-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  z-index: 5;
+}
+
+.cnp-door-tag {
+  color: #7b8ea8;
+}
+
+.cnp-door-serial {
+  color: #f5a623;
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(245, 166, 35, 0.12);
+  border: 1px solid rgba(245, 166, 35, 0.3);
+}
+
+.cnp-door-status {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.cnp-status-pulse {
+  color: #f5a623;
+  animation: cnp-led-pulse 0.9s ease-in-out infinite alternate;
+}
+
+.cnp-status-locked {
+  color: #34d399;
+  text-shadow: 0 0 6px rgba(52, 211, 153, 0.5);
+}
+
+.cnp-door-subtag {
+  color: #556682;
+  font-size: 9px;
+}
+
+@keyframes cnp-led-pulse {
+  from { opacity: 0.6; }
+  to { opacity: 1; text-shadow: 0 0 8px rgba(245, 166, 35, 0.8); }
+}
+
+/* Central Stamped Emblem */
+.cnp-door-emblem-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: auto 0;
+  z-index: 4;
+}
+
+.cnp-tool-emblem {
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.45));
+}
+
+.cnp-emblem-gear {
+  transform-origin: center;
+  animation: cnp-emblem-gear-turn 24s linear infinite;
+}
+
+@keyframes cnp-emblem-gear-turn {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Corner Screws */
+.cnp-corner-screw {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+
+.cnp-screw-bevel {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 40%, #202b3f 0%, #0d1422 75%, #05080f 100%);
+  border: 1px solid #334466;
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.8),
+    0 1px 2px rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cnp-screw-head {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #8ba0c0 0%, #4a5c78 50%, #283447 100%);
+  border: 1px solid #1a2332;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.cnp-screw-slot-h,
+.cnp-screw-slot-v {
+  position: absolute;
+  background: #090e18;
+  box-shadow: 0 0.5px 0.5px rgba(255, 255, 255, 0.3);
+  border-radius: 0.5px;
+}
+
+.cnp-screw-slot-h {
+  width: 11px;
+  height: 2.2px;
+}
+
+.cnp-screw-slot-v {
+  width: 2.2px;
+  height: 11px;
+}
+
+/* Corner screw state: Tightened */
+.cnp-corner-screw.is-tight .cnp-screw-head {
+  transform: scale(0.94) rotate(720deg);
+  filter: drop-shadow(0 0 3px rgba(245, 166, 35, 0.45));
+}
+
+/* Corner screw state: Loose (Screw 4 before ready) */
+.cnp-corner-screw.is-loose .cnp-screw-head {
+  transform: translateY(-2px) scale(1.05) rotate(15deg);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.7);
+}
+
+/* Corner screw state: Ratcheting oscillation */
+.cnp-corner-screw.is-ratcheting .cnp-screw-head {
+  animation: cnp-screw-ratchet-wobble 0.42s ease-in-out infinite;
+}
+
+@keyframes cnp-screw-ratchet-wobble {
+  0%   { transform: translateY(-2px) scale(1.05) rotate(10deg); }
+  45%  { transform: translateY(-1px) scale(1.02) rotate(42deg); }
+  60%  { transform: translateY(-2.2px) scale(1.05) rotate(22deg); }
+  100% { transform: translateY(-2px) scale(1.05) rotate(10deg); }
+}
+
+/* ==========================================================================
+   Animated Screwdriver Tool
+   ========================================================================== */
+
+.cnp-screwdriver-tool {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 30;
+  transition: transform 0.22s cubic-bezier(0.34, 1.25, 0.64, 1);
+  will-change: transform;
+}
+
+.cnp-screwdriver-body {
+  position: absolute;
+  bottom: 0;
+  left: -8px;
+  width: 16px;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  transform-origin: center bottom;
+  filter: drop-shadow(4px 6px 12px rgba(0, 0, 0, 0.7));
+}
+
+/* Screwdriver Cross Tip */
+.cnp-tool-tip {
+  width: 4px;
+  height: 8px;
+  background: linear-gradient(90deg, #1e293b, #475569 50%, #0f172a);
+  border-radius: 1px 1px 0 0;
+  box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* Chrome Steel Shank */
+.cnp-tool-shank {
+  width: 6px;
+  height: 48px;
+  background: linear-gradient(90deg, #64748b 0%, #f8fafc 45%, #94a3b8 70%, #475569 100%);
+  border-radius: 1px;
+}
+
+/* Brass / Gold Bolster Collar */
+.cnp-tool-collar {
+  width: 12px;
+  height: 6px;
+  background: linear-gradient(90deg, #b7791f 0%, #fbd38d 40%, #f5a623 75%, #975a16 100%);
+  border-radius: 2px;
+  border: 0.5px solid #744210;
+  box-shadow: 0 0 4px rgba(245, 166, 35, 0.5);
+}
+
+/* Ergonomic Fluted Handle */
+.cnp-tool-handle {
+  width: 18px;
+  height: 64px;
+  background: linear-gradient(90deg, #090e1a 0%, #17243c 35%, #223555 60%, #0f172a 100%);
+  border-radius: 6px 6px 9px 9px;
+  border: 1px solid #2d3e5e;
+  position: relative;
+  overflow: hidden;
+}
+
+.cnp-handle-flute {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: #38bdf8;
+  opacity: 0.4;
+}
+
+.cnp-handle-flute.flute-1 { left: 4px; }
+.cnp-handle-flute.flute-2 { right: 4px; }
+
+.cnp-handle-flute.flute-gold {
+  left: 8px;
+  width: 2px;
+  background: #f5a623;
+  opacity: 0.85;
+}
+
+/* Striking Cap */
+.cnp-tool-cap {
+  width: 12px;
+  height: 5px;
+  background: linear-gradient(90deg, #64748b, #f1f5f9, #475569);
+  border-radius: 4px 4px 1px 1px;
+}
+
+/* Tool Motion: Driving Screws 1, 2, 3 */
+.stage-screw1 .cnp-screwdriver-body,
+.stage-screw2 .cnp-screwdriver-body,
+.stage-screw3 .cnp-screwdriver-body {
+  animation: cnp-tool-spin-drive 0.22s ease-in-out;
+}
+
+@keyframes cnp-tool-spin-drive {
+  0% {
+    transform: scale(1.08) translateY(-6px);
+  }
+  50% {
+    transform: scale(0.96) translateY(1px);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Tool Motion: Ratcheting on Screw 4 while waiting for data */
+.stage-ratchet .cnp-screwdriver-body {
+  animation: cnp-screwdriver-ratchet 0.42s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+}
+
+@keyframes cnp-screwdriver-ratchet {
+  0% {
+    transform: rotate(0deg) scale(1) translateY(0);
+  }
+  38% {
+    transform: rotate(44deg) scale(0.97) translateY(1.5px);
+  }
+  50% {
+    transform: rotate(38deg) scale(0.98) translateY(1px);
+  }
+  85% {
+    transform: rotate(-16deg) scale(1.04) translateY(-2px);
+  }
+  100% {
+    transform: rotate(0deg) scale(1) translateY(0);
+  }
+}
+
+/* Tool Motion: Final torque drive when data arrives */
+.stage-tightenFinal .cnp-screwdriver-body {
+  animation: cnp-tool-final-power-drive 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+@keyframes cnp-tool-final-power-drive {
+  0% {
+    transform: scale(1.04) translateY(-3px) rotate(-10deg);
+  }
+  60% {
+    transform: scale(0.93) translateY(2px) rotate(120deg);
+  }
+  100% {
+    transform: scale(1) translateY(0) rotate(180deg);
+  }
+}
+
+/* Dynamic Caption styling */
+.cnp-steel-caption-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+}
+
+.cnp-steel-caption {
+  color: #9cb2d6;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.035em;
+  text-align: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+/* ==========================================================================
+   Accessibility: Reduced Motion Mode
+   Static panel with gentle breathing pulse instead of spinning
+   ========================================================================== */
+
 @media (prefers-reduced-motion: reduce) {
-  .cnp-loading-screen { animation: none; }
-  .cnp-loading-frame { animation: none; stroke-dashoffset: 0; }
+  .cnp-steel-loader-backdrop {
+    animation: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .cnp-screwdriver-tool {
+    display: none !important;
+  }
+
+  .cnp-emblem-gear {
+    animation: none !important;
+  }
+
+  .cnp-steel-door {
+    transition: none !important;
+  }
+
+  .cnp-steel-door.door-swinging {
+    transform: none !important;
+  }
+
+  .cnp-steel-hatch-wrapper {
+    animation: cnp-panel-reduced-breathe 2.4s ease-in-out infinite;
+  }
+}
+
+.reduced-motion .cnp-screwdriver-tool {
+  display: none !important;
+}
+
+.reduced-motion .cnp-emblem-gear {
+  animation: none !important;
+}
+
+.reduced-motion .cnp-steel-door.door-swinging {
+  transform: none !important;
+}
+
+.reduced-motion .cnp-steel-hatch-wrapper {
+  animation: cnp-panel-reduced-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes cnp-panel-reduced-breathe {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.5));
+  }
+  50% {
+    transform: scale(1.012);
+    filter: drop-shadow(0 14px 34px rgba(37, 143, 234, 0.3));
+  }
+}
+
+/* Legacy alias for backwards compatibility if needed */
+.cnp-loading-screen {
+  display: contents;
 }
 
 /* Student home: a lighter editorial surface that keeps the CNP indigo identity. */

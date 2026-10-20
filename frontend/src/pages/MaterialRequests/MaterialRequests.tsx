@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import { UserDisplay } from '../../components/UserDisplay';
 import { api } from '../../services/api';
+import { usePageLoading } from '../../context/LoadingContext';
+import LoadingScreen from '../../components/LoadingScreen';
 
 export default function MaterialRequests() {
+  const { setPageLoading } = usePageLoading();
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -14,6 +17,7 @@ export default function MaterialRequests() {
 
   const loadRequests = async () => {
     try {
+      setPageLoading(true);
       const res = await api<any>('GET', '/material-requests');
       setRequests(res.data || []);
     } catch (e: any) {
@@ -21,6 +25,7 @@ export default function MaterialRequests() {
       setAlertMsg({ type: 'error', message: e.message || 'Failed to load material requests' });
     } finally {
       setLoading(false);
+      setPageLoading(false);
     }
   };
 
@@ -79,7 +84,7 @@ export default function MaterialRequests() {
     return r.status !== 'pending';
   });
 
-  if (loading) return <div className="spinner" style={{ margin: '40px auto', display: 'block' }}></div>;
+  if (loading) return <LoadingScreen isReady={!loading} />;
 
   return (
     <div className="page-container">

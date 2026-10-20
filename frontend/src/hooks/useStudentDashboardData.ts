@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { localDayStartIso, useLocalDay } from '../eventDate';
 import { api } from '../services/api';
+import { usePageLoading } from '../context/LoadingContext';
 import type { User } from '../types';
 import type {
   StudentClubMembership,
@@ -90,6 +91,7 @@ async function resolveProjects(userId: string): Promise<{
 }
 
 export function useStudentDashboardData(user: User): StudentDashboardData {
+  const { setPageLoading } = usePageLoading();
   const today = useLocalDay();
   const [clubs, setClubs] = useState<StudentClubMembership[]>([]);
   const [projects, setProjects] = useState<StudentProjectWithMentors[]>([]);
@@ -102,57 +104,62 @@ export function useStudentDashboardData(user: User): StudentDashboardData {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setPageLoading(true);
     setErrors({});
 
-    const [clubResult, projectResult, eventsResult, requestsResult, notifResult, countResult] =
-      await Promise.all([
-        resolveClubMemberships(user._id),
-        resolveProjects(user._id),
-        api<ApiList<unknown[]>>('GET', `/events/upcoming?from=${encodeURIComponent(localDayStartIso())}`).catch((e: Error) => ({ error: e.message })),
-        api<{ data?: StudentJoinRequest[] }>('GET', '/join-requests/student').catch((e: Error) => ({
-          error: e.message,
-        })),
-        api<{ data?: StudentNotificationItem[] }>('GET', '/notifications?limit=5').catch((e: Error) => ({
-          error: e.message,
-        })),
-        api<{ count?: number }>('GET', '/notifications/unread-count').catch((e: Error) => ({ error: e.message })),
-      ]);
+    try {
+      const [clubResult, projectResult, eventsResult, requestsResult, notifResult, countResult] =
+        await Promise.all([
+          resolveClubMemberships(user._id),
+          resolveProjects(user._id),
+          api<ApiList<unknown[]>>('GET', `/events/upcoming?from=${encodeURIComponent(localDayStartIso())}`).catch((e: Error) => ({ error: e.message })),
+          api<{ data?: StudentJoinRequest[] }>('GET', '/join-requests/student').catch((e: Error) => ({
+            error: e.message,
+          })),
+          api<{ data?: StudentNotificationItem[] }>('GET', '/notifications?limit=5').catch((e: Error) => ({
+            error: e.message,
+          })),
+          api<{ count?: number }>('GET', '/notifications/unread-count').catch((e: Error) => ({ error: e.message })),
+        ]);
 
-    setClubs(clubResult.clubs);
-    setProjects(projectResult.projects);
+      setClubs(clubResult.clubs);
+      setProjects(projectResult.projects);
 
-    const nextErrors: StudentDashboardData['errors'] = {};
-    if (clubResult.error) nextErrors.clubs = clubResult.error;
-    if (projectResult.error) nextErrors.projects = projectResult.error;
+      const nextErrors: StudentDashboardData['errors'] = {};
+      if (clubResult.error) nextErrors.clubs = clubResult.error;
+      if (projectResult.error) nextErrors.projects = projectResult.error;
 
-    if ('error' in eventsResult) {
-      nextErrors.events = eventsResult.error as string;
-      setUpcomingEvents([]);
-    } else {
-      setUpcomingEvents(eventsResult.data ?? []);
+      if ('error' in eventsResult) {
+        nextErrors.events = eventsResult.error as string;
+        setUpcomingEvents([]);
+      } else {
+        setUpcomingEvents(eventsResult.data ?? []);
+      }
+
+      if ('error' in requestsResult) {
+        nextErrors.requests = requestsResult.error as string;
+        setJoinRequests([]);
+      } else {
+        setJoinRequests(requestsResult.data ?? []);
+      }
+
+      if ('error' in notifResult) {
+        nextErrors.notifications = notifResult.error as string;
+        setNotifications([]);
+      } else {
+        setNotifications(notifResult.data ?? []);
+      }
+
+      if ('error' in countResult) {
+        nextErrors.notifications = nextErrors.notifications || countResult.error;
+      }
+      setUnreadCount('count' in countResult && typeof countResult.count === 'number' ? countResult.count : 0);
+      setErrors(nextErrors);
+    } finally {
+      setLoading(false);
+      setPageLoading(false);
     }
-
-    if ('error' in requestsResult) {
-      nextErrors.requests = requestsResult.error as string;
-      setJoinRequests([]);
-    } else {
-      setJoinRequests(requestsResult.data ?? []);
-    }
-
-    if ('error' in notifResult) {
-      nextErrors.notifications = notifResult.error as string;
-      setNotifications([]);
-    } else {
-      setNotifications(notifResult.data ?? []);
-    }
-
-    if ('error' in countResult) {
-      nextErrors.notifications = nextErrors.notifications || countResult.error;
-    }
-    setUnreadCount('count' in countResult && typeof countResult.count === 'number' ? countResult.count : 0);
-    setErrors(nextErrors);
-    setLoading(false);
-  }, [user, today]);
+  }, [user, today, setPageLoading]);
 
   useEffect(() => {
     load();

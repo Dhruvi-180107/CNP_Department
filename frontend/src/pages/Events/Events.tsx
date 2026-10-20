@@ -4,9 +4,12 @@ import { useAuth } from '../../context/AuthContext';
 import { EventForm } from '../../components/events/EventForm';
 import { EventCard } from '../../components/events/EventCard';
 import { isEventPast, localDayStartIso, useLocalDay } from '../../eventDate';
+import { usePageLoading } from '../../context/LoadingContext';
+import LoadingScreen from '../../components/LoadingScreen';
 
 export default function Events() {
   const { user } = useAuth();
+  const { setPageLoading } = usePageLoading();
   const today = useLocalDay();
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,6 +29,7 @@ export default function Events() {
   const loadEvents = async () => {
     try {
       setLoading(true);
+      setPageLoading(true);
       const clubsRes = await api<any>('GET', '/clubs').then(res => res.data).catch(() => []);
       setAllClubs(clubsRes);
 
@@ -54,6 +58,7 @@ export default function Events() {
       console.error('Error loading events:', e);
     } finally {
       setLoading(false);
+      setPageLoading(false);
     }
   };
 
@@ -141,11 +146,7 @@ export default function Events() {
   };
 
   if (loading) {
-    return (
-      <div className="page-container" style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
-        <div className="spinner"></div>
-      </div>
-    );
+    return <LoadingScreen isReady={!loading} />;
   }
 
   return (
