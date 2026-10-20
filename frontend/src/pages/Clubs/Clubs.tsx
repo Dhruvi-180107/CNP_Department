@@ -4,9 +4,12 @@ import { api } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ClubForm } from '../../components/clubs/ClubForm';
+import { usePageLoading } from '../../context/LoadingContext';
+import LoadingScreen from '../../components/LoadingScreen';
 
 export default function Clubs() {
   const { user } = useAuth();
+  const { setPageLoading } = usePageLoading();
   const [clubs, setClubs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -17,6 +20,7 @@ export default function Clubs() {
   const [myPending, setMyPending] = useState<Record<string, boolean>>({});
 
   const loadClubs = async () => {
+    setPageLoading(true);
     try {
       const res = await api<any>('GET', '/clubs');
       const allClubs = res.data;
@@ -47,6 +51,7 @@ export default function Clubs() {
       console.error(e);
     } finally {
       setLoading(false);
+      setPageLoading(false);
     }
   };
 
@@ -73,7 +78,9 @@ export default function Clubs() {
         />
       )}
 
-      {loading ? <div className="spinner" style={{ margin: '40px auto', display: 'block' }}></div> : (
+      {loading ? (
+        <LoadingScreen isReady={!loading} fullScreen={false} />
+      ) : (
         clubs.length ? (
           <div className="grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '24px' }}>
             {clubs.map(c => {

@@ -4,6 +4,8 @@ import { api } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ProjectForm } from '../../components/projects/ProjectForm';
+import { usePageLoading } from '../../context/LoadingContext';
+import LoadingScreen from '../../components/LoadingScreen';
 
 export default function Projects() {
   const [projects, setProjects] = useState<any[]>([]);
@@ -13,8 +15,10 @@ export default function Projects() {
   const navigate = useNavigate();
 
   const { user } = useAuth();
+  const { setPageLoading } = usePageLoading();
 
   const loadProjects = async () => {
+    setPageLoading(true);
     try {
       setError(null);
       if (user?.role === 'faculty_mentor') {
@@ -29,6 +33,7 @@ export default function Projects() {
       setError(e.message || 'Failed to load projects');
     } finally {
       setLoading(false);
+      setPageLoading(false);
     }
   };
 
@@ -58,7 +63,9 @@ export default function Projects() {
         </div>
       )}
 
-      {loading ? <div className="spinner" style={{ margin: '40px auto', display: 'block' }}></div> : (
+      {loading ? (
+        <LoadingScreen isReady={!loading} fullScreen={false} />
+      ) : (
         projects.length ? (
           <div className="grid-2">
             {projects.map(p => {

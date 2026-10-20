@@ -1,6 +1,8 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../services/api';
+import { usePageLoading } from '../../context/LoadingContext';
+import LoadingScreen from '../../components/LoadingScreen';
 
 interface NotificationMetadata {
   actorId?: string;
@@ -41,6 +43,7 @@ interface NotificationItem {
 
 export default function Notifications() {
   const navigate = useNavigate();
+  const { setPageLoading } = usePageLoading();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +53,7 @@ export default function Notifications() {
   const fetchNotifications = async () => {
     try {
       setLoading(true);
+      setPageLoading(true);
       setError(null);
       const res = await api<any>('GET', '/notifications');
       setNotifications(res.data || []);
@@ -58,6 +62,7 @@ export default function Notifications() {
       setError(err?.message || 'Failed to load notifications. Please try again.');
     } finally {
       setLoading(false);
+      setPageLoading(false);
     }
   };
 
@@ -322,10 +327,7 @@ export default function Notifications() {
 
       {/* Notification List */}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '60px 0' }}>
-          <div className="spinner" style={{ margin: '0 auto 16px auto', display: 'block' }}></div>
-          <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Loading notifications...</p>
-        </div>
+        <LoadingScreen isReady={!loading} fullScreen={false} caption="Synchronizing notifications…" />
       ) : error ? (
         <div
           className="empty-state"

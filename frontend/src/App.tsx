@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth, isProfileComplete } from './context/AuthContext';
+import { LoadingProvider, usePageLoading } from './context/LoadingContext';
 import { AppLayout } from './components/layout/AppLayout';
 import { ProtectedRoute, RoleProtectedRoute } from './components/ProtectedRoute';
 
@@ -22,24 +23,38 @@ import LoadingScreen from './components/LoadingScreen';
 function RouteTransition() {
   const location = useLocation();
   const previousPath = useRef(location.pathname);
+  const { isPageReady, setPageReady } = usePageLoading();
   const [isTransitioning, setIsTransitioning] = useState(false);
 
   useEffect(() => {
     if (previousPath.current === location.pathname) return;
     previousPath.current = location.pathname;
+    
+    // Reset ready state for new route so screws 1-3 progress and screw 4 honestly waits for page data
+    setPageReady(false);
     setIsTransitioning(true);
 
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const timeout = window.setTimeout(() => setIsTransitioning(false), reducedMotion ? 150 : 700);
-    return () => window.clearTimeout(timeout);
-  }, [location.pathname]);
+    // Fallback timer: if destination page has no async fetch or finishes fast, ensure isPageReady releases
+    const fallbackTimer = window.setTimeout(() => {
+      setPageReady(true);
+    }, 1100);
 
-  return isTransitioning ? <LoadingScreen /> : null;
+    return () => window.clearTimeout(fallbackTimer);
+  }, [location.pathname, setPageReady]);
+
+  if (!isTransitioning) return null;
+
+  return (
+    <LoadingScreen
+      isReady={isPageReady}
+      onComplete={() => setIsTransitioning(false)}
+    />
+  );
 }
 
 function AuthGuard() {
   const { user, loading } = useAuth();
-  if (loading) return <LoadingScreen />;
+  if (loading) return <LoadingScreen isReady={!loading} />;
   if (user) {
     return <Navigate to={isProfileComplete(user) ? "/dashboard" : "/profile"} replace />;
   }
@@ -48,7 +63,7 @@ function AuthGuard() {
 
 function AuthRegisterGuard() {
   const { user, loading } = useAuth();
-  if (loading) return <LoadingScreen />;
+  if (loading) return <LoadingScreen isReady={!loading} />;
   if (user) {
     return <Navigate to={isProfileComplete(user) ? "/dashboard" : "/profile"} replace />;
   }
@@ -64,30 +79,32 @@ function RootRedirect() {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<AuthGuard />} />
-          <Route path="/register" element={<AuthRegisterGuard />} />
-          <Route path="/" element={<ProtectedRoute />}>
-            <Route element={<AppLayout />}>
-              <Route index element={<RootRedirect />} />
-              <Route path="dashboard" element={<Dashboard />} />
-              <Route path="clubs" element={<Clubs />} />
-              <Route path="clubs/:id" element={<ClubDetails />} />
-              <Route path="projects" element={<Projects />} />
-              <Route path="projects/:id" element={<ProjectDetails />} />
-              <Route path="events" element={<Events />} />
-              <Route path="notifications" element={<Notifications />} />
-              <Route path="profile" element={<Profile />} />
-              <Route element={<RoleProtectedRoute allowedRoles={['project_admin']} />}>
-                <Route path="material-requests" element={<MaterialRequests />} />
-                <Route path="inventory" element={<Inventory />} />
+      <LoadingProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<AuthGuard />} />
+            <Route path="/register" element={<AuthRegisterGuard />} />
+            <Route path="/" element={<ProtectedRoute />}>
+              <Route element={<AppLayout />}>
+                <Route index element={<RootRedirect />} />
+                <Route path="dashboard" element={<Dashboard />} />
+                <Route path="clubs" element={<Clubs />} />
+                <Route path="clubs/:id" element={<ClubDetails />} />
+                <Route path="projects" element={<Projects />} />
+                <Route path="projects/:id" element={<ProjectDetails />} />
+                <Route path="events" element={<Events />} />
+                <Route path="notifications" element={<Notifications />} />
+                <Route path="profile" element={<Profile />} />
+                <Route element={<RoleProtectedRoute allowedRoles={['project_admin']} />}>
+                  <Route path="material-requests" element={<MaterialRequests />} />
+                  <Route path="inventory" element={<Inventory />} />
+                </Route>
               </Route>
             </Route>
-          </Route>
-        </Routes>
-        <RouteTransition />
-      </BrowserRouter>
+          </Routes>
+          <RouteTransition />
+        </BrowserRouter>
+      </LoadingProvider>
     </AuthProvider>
   );
 }

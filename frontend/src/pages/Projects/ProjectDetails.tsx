@@ -9,11 +9,14 @@ import { ProjectMaterialRequests } from '../../components/projects/ProjectMateri
 import { ProjectUpdates } from '../../components/projects/ProjectUpdates';
 import { ProjectManagement } from '../../components/projects/ProjectManagement';
 import { ProjectJoinRequests } from '../../components/projects/ProjectJoinRequests';
+import { usePageLoading } from '../../context/LoadingContext';
+import LoadingScreen from '../../components/LoadingScreen';
 
 export default function ProjectDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { setPageLoading } = usePageLoading();
   
   const [project, setProject] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);
@@ -23,6 +26,7 @@ export default function ProjectDetails() {
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
+    setPageLoading(true);
     try {
       setError(null);
       const res = await api<any>('GET', `/projects/${id}`);
@@ -53,6 +57,7 @@ export default function ProjectDetails() {
       setError(e.message || 'Failed to load project details');
     } finally {
       setLoading(false);
+      setPageLoading(false);
     }
   };
 
@@ -96,7 +101,7 @@ export default function ProjectDetails() {
     }
   };
 
-  if (loading) return <div className="spinner"></div>;
+  if (loading) return <LoadingScreen isReady={!loading} />;
 
   if (error) {
     return (

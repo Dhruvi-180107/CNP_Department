@@ -7,9 +7,12 @@ import { EventCard } from '../../components/events/EventCard';
 import { EventForm } from '../../components/events/EventForm';
 import { StudentDashboardPage } from './StudentDashboardPage';
 import { isEventPast, useLocalDay } from '../../eventDate';
+import { usePageLoading } from '../../context/LoadingContext';
+import LoadingScreen from '../../components/LoadingScreen';
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const { setPageLoading } = usePageLoading();
   const navigate = useNavigate();
   const today = useLocalDay();
   
@@ -38,6 +41,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
+      setPageLoading(true);
       try {
         if (user?.role === 'faculty_coordinator') {
           setCoordinatorError(null);
@@ -134,6 +138,7 @@ export default function Dashboard() {
         console.error(e);
       } finally {
         setLoading(false);
+        setPageLoading(false);
       }
   };
 
@@ -143,7 +148,7 @@ export default function Dashboard() {
 
   if (user?.role === 'student') return <StudentDashboardPage user={user} />;
 
-  if (loading) return <div className="spinner"></div>;
+  if (loading) return <LoadingScreen isReady={!loading} />;
 
   return (
     <div>
