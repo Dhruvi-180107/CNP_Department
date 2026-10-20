@@ -21,7 +21,7 @@
  *   - student / faculty_mentor / project_admin: read-only
  *
  * Past events are never deleted.
- * "Upcoming" is determined dynamically: eventDate >= Date.now() at query time.
+ * "Upcoming" includes the current local calendar day and changes at midnight.
  */
 
 import express from 'express';
@@ -226,15 +226,19 @@ router.post(
 // ══════════════════════════════════════════════════════════════════════════════
 // B. GET UPCOMING EVENTS
 // GET /api/events/upcoming
-// Returns events where eventDate >= now, sorted ascending.
+// Returns events from the requested local day boundary, sorted ascending.
 // Past events remain in DB — never deleted.
 // ══════════════════════════════════════════════════════════════════════════════
 
-router.get('/upcoming', requireAuth, async (_req, res) => {
+router.get('/upcoming', requireAuth, async (req, res) => {
   try {
-    const now = new Date();
+    const requestedStart = req.query.from ? new Date(req.query.from) : new Date();
+    if (Number.isNaN(requestedStart.getTime())) {
+      return res.status(400).json({ success: false, message: 'Invalid upcoming events date boundary' });
+    }
+    if (!req.query.from) requestedStart.setHours(0, 0, 0, 0);
 
-    const events = await Event.find({ eventDate: { $gte: now } })
+    const events = await Event.find({ eventDate: { $gte: requestedStart } })
       .populate('clubId', 'name description facultyCoordinatorId logo coverImage')
       .populate('createdBy', 'name email role department semester')
       .sort({ eventDate: 1 }); // Soonest first

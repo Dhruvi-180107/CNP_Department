@@ -1,3 +1,5 @@
+import { isEventPast } from '../../eventDate';
+
 export interface EventCardProps {
   event: any;
   canManage?: boolean;
@@ -12,7 +14,7 @@ export function EventCard({
   canManage = false,
   onEdit,
   onDelete,
-  isPast = false,
+  isPast,
   compact = false,
 }: EventCardProps) {
   const club = typeof event.clubId === 'object' && event.clubId !== null ? event.clubId : null;
@@ -20,6 +22,7 @@ export function EventCard({
   const clubLogo = club?.logo || null;
 
   const rawDate = event.eventDate || event.date;
+  const eventIsPast = isPast ?? isEventPast(rawDate);
   const eventDateObj = rawDate ? new Date(rawDate) : null;
   const isValidDate = eventDateObj && !isNaN(eventDateObj.getTime());
 
@@ -43,16 +46,16 @@ export function EventCard({
   return (
     <div
       id={`event-${event._id}`}
-      className="card event-card"
+      className={`card event-card${eventIsPast ? ' past' : ''}`}
       style={{
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        background: isPast ? 'var(--bg-card-2)' : 'var(--surface)',
+        background: eventIsPast ? 'var(--bg-card-2)' : 'var(--surface)',
         border: '1px solid var(--border)',
         borderRadius: '12px',
         padding: compact ? '16px' : '20px',
-        opacity: isPast ? 0.88 : 1,
+        opacity: 1,
         transition: 'all 0.2s ease',
       }}
     >
@@ -119,13 +122,13 @@ export function EventCard({
           </div>
         </div>
 
-        {isPast ? (
+        {eventIsPast ? (
           <span
             className="badge"
             style={{
-              background: 'rgba(100, 116, 139, 0.12)',
-              color: 'var(--text-muted)',
-              border: '1px solid rgba(100, 116, 139, 0.25)',
+              background: '#ffedd5',
+              color: '#9a3412',
+              border: '1px solid #fdba74',
               fontSize: '11px',
               padding: '3px 8px',
             }}

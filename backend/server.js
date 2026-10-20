@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import dns from "node:dns";
 
 import connectDB from './config/db.js';
 import healthRoutes from './routes/healthRoutes.js';
@@ -18,6 +19,8 @@ import materialRequestRoutes from './src/routes/materialRequestRoutes.js';
 import allocationRoutes from './src/routes/allocationRoutes.js';
 import notificationRoutes from './src/routes/notificationRoutes.js';
 import { startEventReminderScheduler } from './src/services/eventReminderService.js';
+
+dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
 // ─── Validate required environment variables ───────────────────────────────────
 if (!process.env.JWT_SECRET) {

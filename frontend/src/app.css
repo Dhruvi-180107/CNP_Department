@@ -679,10 +679,9 @@ textarea { resize: vertical; min-height: 80px; }
 .event-date-badge .ev-day   { font-size: 24px; font-weight: 700; color: var(--text); line-height: 1.1; }
 .event-date-badge .ev-year  { font-size: 10px; color: var(--text-faint); }
 
-.event-card.past { opacity: 0.6; }
-.event-card.past .event-date-badge { background: rgba(100,116,139,0.1); border-color: rgba(100,116,139,0.2); }
+.event-card.past .event-date-badge { background: #fff7ed; border-color: #fdba74; }
 .event-card.past .ev-month,
-.event-card.past .ev-day { color: var(--text-faint); }
+.event-card.past .ev-day { color: #c2410c; }
 
 .event-body { flex: 1; min-width: 0; }
 .event-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; line-height: 1.4; }
@@ -720,8 +719,8 @@ input[type="datetime-local"]:focus { border-color: var(--border-focus); box-shad
 .past-label {
   display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px;
   border-radius: 20px; font-size: 10px; font-weight: 600;
-  background: rgba(100,116,139,0.12); color: var(--text-faint);
-  border: 1px solid rgba(100,116,139,0.2); text-transform: uppercase; letter-spacing: 0.5px;
+  background: #ffedd5; color: #9a3412;
+  border: 1px solid #fdba74; text-transform: uppercase; letter-spacing: 0.5px;
 }
 .upcoming-label {
   display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px;
@@ -1906,8 +1905,7 @@ input[type="number"]:focus {
 .student-dash-event-stack { display: grid; gap: 10px; }
 .student-dash-event-stack .event-card { height: auto !important; padding: 13px !important; border-radius: 12px !important; box-shadow: none !important; }
 .student-dash-event-stack .event-card > div:first-child { margin-bottom: 9px !important; padding-bottom: 8px !important; }
-.student-dash-event-stack .event-card > div:first-child > div:first-child > img,
-.student-dash-event-stack .event-card > div:first-child > div:first-child > div { width: 27px !important; height: 27px !important; }
+.student-dash-event-stack .event-card > div:first-child > div:first-child > :first-child { width: 27px !important; height: 27px !important; }
 .student-dash-event-stack .event-card h3 { margin-bottom: 7px !important; font-size: 14px !important; }
 .student-dash-event-stack .event-card p { margin-bottom: 0 !important; font-size: 11px !important; }
 .student-dash-aside-empty { margin: 0; padding: 4px 0 7px; color: #7c879c; font-size: 12px; line-height: 1.6; }
@@ -1980,4 +1978,324 @@ input[type="number"]:focus {
 }
 @media (prefers-reduced-motion: reduce) {
   .student-dash, .student-dash * { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Shell + Student Dashboard visual refresh
+   Brings the login page's navy / gold identity into the authenticated app.
+   Layout and markup are unchanged; this block only restyles.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --bg: #edf1f9;
+  --navy-950: #0c1a47;
+  --navy-900: #0f2262;
+  --navy-800: #142d79;
+  --navy-700: #203d91;
+  --navy-600: #314da0;
+  --gold: #e3b04b;
+  --gold-soft: #f6e3b4;
+  /* Previously referenced across components but never defined. */
+  --primary: #203d91;
+  --primary-glow: rgba(32, 61, 145, 0.10);
+}
+
+/* Sidebar wrapper had no rules, so the sidebar stopped at its content height. */
+.sidebar-container { display: flex; flex-shrink: 0; height: 100%; }
+
+/* ── Shared buttons ─────────────────────────────────────────────────────── */
+.btn-primary {
+  background: linear-gradient(180deg, #2b4ba8, #183184);
+  box-shadow: 0 6px 16px rgba(24, 49, 132, .22);
+}
+.btn-primary:hover { background: linear-gradient(180deg, #3355b4, #1c3a98); }
+.btn-outline {
+  background: #fff;
+  color: var(--navy-700);
+  border: 1px solid #d3dcf1;
+}
+.btn-outline:hover { border-color: var(--navy-700); background: #f3f6fd; }
+.btn:focus-visible { box-shadow: 0 0 0 3px rgba(32, 61, 145, .28); }
+
+/* ── Sidebar: navy story-panel treatment ────────────────────────────────── */
+.main-sidebar {
+  position: relative;
+  overflow: hidden;
+  border-right: 0;
+  color: #fff;
+  background: linear-gradient(176deg, var(--navy-900) 0%, var(--navy-800) 52%, #1b3a8c 100%);
+  box-shadow: 8px 0 30px rgba(15, 34, 98, .16);
+}
+.main-sidebar::before {
+  position: absolute;
+  top: -130px;
+  right: -180px;
+  width: 330px;
+  height: 330px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 50%;
+  box-shadow: 0 0 0 48px rgba(255, 255, 255, .025), 0 0 0 96px rgba(255, 255, 255, .015);
+  content: '';
+  pointer-events: none;
+}
+.main-sidebar > * { position: relative; z-index: 1; }
+.main-sidebar .brand { color: #fff; border-bottom: 1px solid rgba(255, 255, 255, .1); }
+.main-sidebar .brand .dot {
+  background: var(--gold);
+  box-shadow: 0 0 0 4px rgba(227, 176, 75, .2), 0 0 14px rgba(227, 176, 75, .55);
+}
+.main-nav-btn { position: relative; color: rgba(222, 231, 255, .74); }
+.main-nav-btn .nav-icon { width: 18px; height: 18px; flex: none; }
+.main-nav-btn:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+.main-nav-btn.active {
+  background: rgba(255, 255, 255, .13);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1);
+}
+.main-nav-btn.active::before {
+  position: absolute;
+  top: 9px;
+  bottom: 9px;
+  left: -16px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--gold);
+  content: '';
+}
+.main-nav-btn:focus-visible { outline: 2px solid var(--gold-soft); outline-offset: 2px; }
+.main-sidebar .user-indicator { border-top: 1px solid rgba(255, 255, 255, .1); }
+.main-sidebar .user-name { color: #fff; }
+.main-sidebar .user-role { color: rgba(214, 224, 255, .65); }
+.main-sidebar .user-avatar-placeholder { background: var(--gold-soft); color: var(--navy-800); }
+.main-sidebar .user-avatar { box-shadow: 0 0 0 2px rgba(255, 255, 255, .25); }
+.main-sidebar .sign-out-btn {
+  width: 100%;
+  justify-content: center;
+  color: #fff;
+  background: rgba(255, 255, 255, .08);
+  border: 1px solid rgba(255, 255, 255, .2);
+}
+.main-sidebar .sign-out-btn:hover { background: rgba(255, 255, 255, .16); border-color: rgba(255, 255, 255, .34); }
+
+/* ── Top bar and page canvas ────────────────────────────────────────────── */
+.app-header {
+  background: rgba(255, 255, 255, .82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid #e0e6f3;
+}
+.header-title { color: var(--navy-800); font-weight: 650; letter-spacing: -.02em; }
+.app-header .badge-student {
+  background: #eaeffc;
+  color: var(--navy-700);
+  border-color: #d3dcf5;
+  text-transform: capitalize;
+}
+.main-content {
+  background:
+    radial-gradient(ellipse 60% 42% at 100% 0%, rgba(49, 77, 160, .11), transparent 70%),
+    radial-gradient(ellipse 50% 40% at 0% 100%, rgba(227, 176, 75, .10), transparent 70%),
+    var(--bg);
+}
+
+/* ── Student dashboard hero: full navy, like the login story panel ──────── */
+.student-dash-header {
+  border: 0;
+  color: #fff;
+  background:
+    radial-gradient(ellipse at 88% 0%, rgba(122, 152, 238, .42), transparent 42%),
+    radial-gradient(ellipse at 100% 100%, rgba(227, 176, 75, .20), transparent 38%),
+    linear-gradient(135deg, var(--navy-900) 0%, var(--navy-800) 50%, #25459f 100%);
+  box-shadow: 0 24px 50px -20px rgba(15, 34, 98, .6), 0 2px 6px rgba(15, 34, 98, .12);
+}
+.student-dash-header::after {
+  right: 4%;
+  bottom: -120px;
+  width: 360px;
+  height: 360px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  box-shadow: 0 0 0 48px rgba(255, 255, 255, .035), 0 0 0 96px rgba(255, 255, 255, .02);
+  transform: none;
+}
+.student-dash-header .student-dash-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: rgba(214, 224, 255, .82);
+}
+.student-dash-header .student-dash-eyebrow::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 0 4px rgba(227, 176, 75, .22);
+  content: '';
+}
+.student-dash-header .student-dash-title { color: #fff; }
+.student-dash-header .student-dash-title-accent {
+  background: linear-gradient(90deg, #f8e2a2, var(--gold));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.student-dash-header .student-dash-lede { color: rgba(214, 224, 255, .8); }
+.student-dash-header :is(button, a):focus-visible { outline-color: rgba(246, 227, 180, .85); }
+
+.student-dash-notification-link,
+.student-dash-header-actions .btn-outline {
+  border: 1px solid rgba(255, 255, 255, .24);
+  background: rgba(255, 255, 255, .1);
+  color: #fff;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.student-dash-notification-link:hover,
+.student-dash-header-actions .btn-outline:hover {
+  border-color: rgba(255, 255, 255, .42);
+  background: rgba(255, 255, 255, .19);
+}
+.student-dash-header-actions .btn-primary {
+  background: linear-gradient(180deg, #f3cb73, #dca43a);
+  color: #1a2350;
+  box-shadow: 0 8px 20px rgba(227, 176, 75, .34);
+}
+.student-dash-header-actions .btn-primary:hover { background: linear-gradient(180deg, #f7d585, #e3ae45); }
+.student-dash-notification-count { background: var(--gold); color: var(--navy-900); }
+
+/* ── Overview line ──────────────────────────────────────────────────────── */
+.student-dash-overview-summary { color: #25356a; }
+.student-dash-overview-attention li { color: #8a5a14; }
+.student-dash-overview-attention li::before { background: var(--gold); }
+.student-dash-overview-quiet { color: #6f7b99; }
+
+/* ── Panels ─────────────────────────────────────────────────────────────── */
+.student-dash-section,
+.student-dash-notifications {
+  border: 1px solid #dfe5f3;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 34, 98, .04), 0 16px 34px -18px rgba(15, 34, 98, .2);
+}
+.student-dash-section { position: relative; }
+.student-dash-section::before {
+  position: absolute;
+  top: 0;
+  left: 22px;
+  width: 42px;
+  height: 3px;
+  border-radius: 0 0 4px 4px;
+  background: linear-gradient(90deg, var(--gold), #f3cb73);
+  content: '';
+}
+.student-dash-section-head .student-dash-eyebrow { color: #9a7a35; }
+.student-dash-section-title { color: var(--navy-800); }
+.student-dash-count { border-color: #d3dcf5; background: #eaeffc; color: var(--navy-700); }
+.student-dash-section-action { color: var(--navy-700); }
+.student-dash-section-action:hover { border-color: #dbe3f6; background: #eef2fc; }
+
+/* Cards inside panels */
+.student-dash .student-card {
+  border-color: #e3e8f4;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fff, #fbfcff);
+}
+.student-dash .student-card:hover {
+  border-color: #b9c7ea;
+  box-shadow: 0 18px 30px -16px rgba(20, 45, 121, .38);
+  transform: translateY(-3px);
+}
+.student-dash .student-card-title { color: var(--navy-800); }
+.student-dash .badge-core-team,
+.student-dash .badge-team-leader { background: #fdf3d9; color: #87590a; border-color: #f1d79a; }
+.student-dash .badge-member { background: #e8f5ef; color: #276b56; border-color: #bfe3d3; }
+.student-dash .badge-team-member { background: #e8eefc; color: var(--navy-700); border-color: #ccd8f6; }
+
+.student-dash-empty {
+  border-color: #cdd8ef;
+  background: linear-gradient(130deg, #f5f8ff, #fffaf0);
+}
+.student-dash-empty-title { color: var(--navy-800); }
+.student-dash-request-row:hover:not(:disabled) { border-color: #cdd8ef; background: #f5f8ff; }
+.student-dash-status--pending { color: #87590a; background: #fdf3d9; }
+
+/* Event cards inside the aside stack */
+.student-dash-event-stack .event-card {
+  border-color: #e3e8f4 !important;
+  background: linear-gradient(180deg, #fff, #fbfcff) !important;
+}
+.student-dash-event-stack .event-card h3 { color: var(--navy-800) !important; }
+
+/* Notifications: the one dark panel, balancing the hero */
+.student-dash-notifications {
+  border: 0;
+  color: #fff;
+  background:
+    radial-gradient(ellipse at 100% 0%, rgba(122, 152, 238, .35), transparent 55%),
+    linear-gradient(150deg, var(--navy-900), var(--navy-700));
+  box-shadow: 0 22px 40px -22px rgba(15, 34, 98, .7);
+}
+.student-dash-notifications .student-dash-eyebrow { color: rgba(214, 224, 255, .75); }
+.student-dash-notifications h2 { color: #fff; }
+.student-dash-notifications .student-dash-count { border-color: transparent; background: var(--gold); color: var(--navy-900); }
+.student-dash-notifications .student-dash-aside-empty { color: rgba(214, 224, 255, .8); }
+.student-dash-latest-notification { border-color: rgba(255, 255, 255, .16); background: rgba(255, 255, 255, .1); }
+.student-dash-latest-notification:hover { background: rgba(255, 255, 255, .16); }
+.student-dash-latest-copy strong { color: #fff; }
+.student-dash-latest-copy > span { color: rgba(214, 224, 255, .8); }
+.student-dash-notification-dot { background: var(--gold); }
+.student-dash-notification-dot.is-read { background: rgba(255, 255, 255, .35); }
+.student-dash-arrow { color: var(--gold-soft); }
+.student-dash-inbox-link { color: var(--gold-soft); }
+.student-dash-notifications :is(button, a):focus-visible { outline-color: rgba(246, 227, 180, .85); }
+
+/* Loading skeleton picks up the same radius */
+.student-dash-skeleton-hero, .student-dash-skeleton-panel { border-radius: 20px; }
+
+/* ── Mobile: the topbar/drawer markup existed but had no styles ─────────── */
+@media (max-width: 768px) {
+  .app-layout { flex-direction: column; }
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    padding: 12px 18px;
+    color: #fff;
+    background: linear-gradient(135deg, var(--navy-900), var(--navy-700));
+  }
+  .mobile-topbar .brand { color: #fff !important; }
+  .mobile-nav-toggle {
+    width: 40px;
+    height: 40px;
+    border: 1px solid rgba(255, 255, 255, .25);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, .1);
+    color: #fff;
+    font-size: 18px;
+    cursor: pointer;
+  }
+  .sidebar-container {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 60;
+    transform: translateX(-100%);
+    transition: transform .25s ease;
+  }
+  .sidebar-container.open { transform: translateX(0); }
+  .mobile-overlay { display: block; position: fixed; inset: 0; z-index: 50; background: rgba(12, 26, 71, .5); }
+  .main-content { padding: 20px 16px; }
+  .app-header { padding: 0 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-container { transition: none; }
+}
+
+/* EventCard is a flex column, but the legacy grid rule left `align-items: start`
+   on it, which shrink-wrapped the header (short divider, badge hugging the label). */
+.card.event-card { align-items: stretch; }
+.student-dash-event-stack .event-card { margin-bottom: 0; }
+.student-dash-event-stack .event-card > div:first-child { gap: 10px; }
+@media (max-width: 768px) {
+  .sidebar-container:not(.open) .main-sidebar { box-shadow: none; }
 }

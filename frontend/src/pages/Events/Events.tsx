@@ -3,9 +3,11 @@ import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { EventForm } from '../../components/events/EventForm';
 import { EventCard } from '../../components/events/EventCard';
+import { isEventPast, localDayStartIso, useLocalDay } from '../../eventDate';
 
 export default function Events() {
   const { user } = useAuth();
+  const today = useLocalDay();
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -45,7 +47,7 @@ export default function Events() {
         evts = await api<any>('GET', '/events').then(res => res.data).catch(() => []);
       } else {
         // Students and other roles view upcoming events across all clubs
-        evts = await api<any>('GET', '/events/upcoming').then(res => res.data).catch(() => []);
+        evts = await api<any>('GET', `/events/upcoming?from=${encodeURIComponent(localDayStartIso())}`).then(res => res.data).catch(() => []);
       }
       setEvents(evts);
     } catch (e) {
@@ -57,7 +59,7 @@ export default function Events() {
 
   useEffect(() => {
     loadEvents();
-  }, [user]);
+  }, [user, today]);
 
   useEffect(() => {
     if (!loading && window.location.hash) {
@@ -80,7 +82,6 @@ export default function Events() {
     }
   };
 
-  const now = Date.now();
 
   // Filter by selected club if set
   let filteredEvents = events;
@@ -105,11 +106,11 @@ export default function Events() {
   }
 
   const upcomingEvents = displayEvents
-    .filter(e => new Date(e.eventDate || e.date).getTime() >= now)
+    .filter(e => !isEventPast(e.eventDate || e.date))
     .sort((a, b) => new Date(a.eventDate || a.date).getTime() - new Date(b.eventDate || b.date).getTime());
 
   const pastEvents = displayEvents
-    .filter(e => new Date(e.eventDate || e.date).getTime() < now)
+    .filter(e => isEventPast(e.eventDate || e.date))
     .sort((a, b) => new Date(b.eventDate || b.date).getTime() - new Date(a.eventDate || a.date).getTime());
 
   // Authorization check for event management
@@ -232,11 +233,11 @@ export default function Events() {
             </h3>
             <div style={{ display: 'flex', gap: '16px', fontSize: '12px', justifyContent: 'center', color: 'var(--text-muted)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '2px', background: 'var(--primary)' }}></span>
+                <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '2px', background: '#16a34a' }}></span>
                 Upcoming Event
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '2px', background: 'rgba(100,116,139,0.2)' }}></span>
+                <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '2px', background: '#f97316' }}></span>
                 Past Event
               </div>
             </div>
@@ -290,7 +291,7 @@ export default function Events() {
                   {day}
                 </div>
                 {visibleEvents.map(e => {
-                  const isPast = new Date(e.eventDate || e.date).getTime() < now;
+                  const isPast = isEventPast(e.eventDate || e.date);
                   return (
                     <div
                       key={e._id}
@@ -303,12 +304,12 @@ export default function Events() {
                         fontSize: '11px',
                         padding: '3px 6px',
                         borderRadius: '4px',
-                        background: isPast ? 'rgba(100,116,139,0.15)' : 'var(--primary)',
-                        color: isPast ? 'var(--text-muted)' : '#fff',
+                        background: isPast ? '#ffedd5' : '#16a34a',
+                        color: isPast ? '#9a3412' : '#fff',
                         whiteSpace: 'nowrap',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
-                        border: isPast ? '1px solid rgba(100,116,139,0.2)' : 'none',
+                        border: isPast ? '1px solid #fdba74' : '1px solid #15803d',
                       }}
                       title={`${e.title} (${typeof e.clubId === 'object' ? e.clubId?.name : ''})`}
                     >
@@ -408,9 +409,9 @@ export default function Events() {
               gap: '8px',
             }}
           >
-            <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: 'var(--text-faint)' }}></span>
+            <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#f97316' }}></span>
             Past Events
-            <span className="badge" style={{ marginLeft: '6px', background: 'rgba(100,116,139,0.12)', color: 'var(--text-faint)' }}>
+            <span className="badge" style={{ marginLeft: '6px', background: '#ffedd5', color: '#9a3412' }}>
               {pastEvents.length}
             </span>
           </h3>
