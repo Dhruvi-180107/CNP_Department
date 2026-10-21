@@ -3,7 +3,7 @@ import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { EventForm } from '../../components/events/EventForm';
 import { EventCard } from '../../components/events/EventCard';
-import { isEventPast, localDayStartIso, useLocalDay } from '../../eventDate';
+import { isEventPast, localDayStartIso, partitionEvents, useLocalDay } from '../../eventDate';
 import { usePageLoading } from '../../context/LoadingContext';
 import LoadingScreen from '../../components/LoadingScreen';
 
@@ -110,13 +110,7 @@ export default function Events() {
     });
   }
 
-  const upcomingEvents = displayEvents
-    .filter(e => !isEventPast(e.eventDate || e.date))
-    .sort((a, b) => new Date(a.eventDate || a.date).getTime() - new Date(b.eventDate || b.date).getTime());
-
-  const pastEvents = displayEvents
-    .filter(e => isEventPast(e.eventDate || e.date))
-    .sort((a, b) => new Date(b.eventDate || b.date).getTime() - new Date(a.eventDate || a.date).getTime());
+  const { upcoming: upcomingEvents, past: pastEvents } = partitionEvents(displayEvents);
 
   // Authorization check for event management
   const canManageEvent = (e: any) => {

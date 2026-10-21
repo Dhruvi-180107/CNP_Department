@@ -28,6 +28,23 @@ export interface UserSelectProps {
   disabled?: boolean;
 }
 
+const ROLE_DEFAULTS: Record<UserSelectProps['role'], { placeholder: string; emptyMessage: string }> = {
+  student: {
+    placeholder: 'Search student by name, email, or department...',
+    emptyMessage: 'No registered students found',
+  },
+  faculty_mentor: {
+    placeholder: 'Search faculty mentor by name, email, or department...',
+    emptyMessage: 'No eligible mentors available',
+  },
+  faculty_coordinator: {
+    placeholder: 'Search faculty coordinator by name or email...',
+    emptyMessage: 'No registered coordinators found',
+  },
+};
+
+const FALLBACK_DEFAULTS = { placeholder: 'Search users...', emptyMessage: 'No users found' };
+
 export function UserSelect({
   role,
   value,
@@ -52,32 +69,8 @@ export function UserSelect({
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Default placeholders & empty messages by role
-  const defaultPlaceholder = useMemo(() => {
-    switch (role) {
-      case 'student':
-        return 'Search student by name, email, or department...';
-      case 'faculty_mentor':
-        return 'Search faculty mentor by name, email, or department...';
-      case 'faculty_coordinator':
-        return 'Search faculty coordinator by name or email...';
-      default:
-        return 'Search users...';
-    }
-  }, [role]);
-
-  const defaultEmptyMessage = useMemo(() => {
-    switch (role) {
-      case 'student':
-        return 'No registered students found';
-      case 'faculty_mentor':
-        return 'No eligible mentors available';
-      case 'faculty_coordinator':
-        return 'No registered coordinators found';
-      default:
-        return 'No users found';
-    }
-  }, [role]);
+  const { placeholder: defaultPlaceholder, emptyMessage: defaultEmptyMessage } =
+    ROLE_DEFAULTS[role] ?? FALLBACK_DEFAULTS;
 
   // Fetch users from MongoDB Atlas via GET /api/users?role=${role}
   const loadUsers = async () => {

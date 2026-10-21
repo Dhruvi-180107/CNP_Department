@@ -7,7 +7,7 @@ import { ClubManagement } from '../../components/clubs/ClubManagement';
 import { MemberItem } from '../../components/clubs/MemberItem';
 import { EventCard } from '../../components/events/EventCard';
 import { EventForm } from '../../components/events/EventForm';
-import { isEventPast, useLocalDay } from '../../eventDate';
+import { partitionEvents, useLocalDay } from '../../eventDate';
 import { usePageLoading } from '../../context/LoadingContext';
 import LoadingScreen from '../../components/LoadingScreen';
 
@@ -43,12 +43,7 @@ export default function ClubDetails() {
         const eClubId = typeof e.clubId === 'object' ? e.clubId?._id : e.clubId;
         return !eClubId || eClubId === id;
       });
-      const upcoming = clubEvts
-        .filter((e: any) => !isEventPast(e.eventDate || e.date))
-        .sort((a: any, b: any) => new Date(a.eventDate || a.date).getTime() - new Date(b.eventDate || b.date).getTime());
-      const past = clubEvts
-        .filter((e: any) => isEventPast(e.eventDate || e.date))
-        .sort((a: any, b: any) => new Date(b.eventDate || b.date).getTime() - new Date(a.eventDate || a.date).getTime());
+      const { upcoming, past } = partitionEvents(clubEvts);
       setUpcomingEvents(upcoming);
       setPastEvents(past);
       
