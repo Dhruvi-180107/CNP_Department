@@ -18,6 +18,7 @@ import Login from './pages/Auth/Login';
 import Register from './pages/Auth/Register';
 import MaterialRequests from './pages/MaterialRequests/MaterialRequests';
 import Inventory from './pages/Inventory/Inventory';
+import Landing from './pages/Landing/Landing';
 import LoadingScreen from './components/LoadingScreen';
 
 function RouteTransition() {
@@ -70,12 +71,6 @@ function AuthRegisterGuard() {
   return <Register />;
 }
 
-function RootRedirect() {
-  const { user } = useAuth();
-  if (user && !isProfileComplete(user)) return <Navigate to="/profile" replace />;
-  return <Navigate to="/dashboard" replace />;
-}
-
 export default function App() {
   return (
     <AuthProvider>
@@ -84,9 +79,9 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<AuthGuard />} />
             <Route path="/register" element={<AuthRegisterGuard />} />
-            <Route path="/" element={<ProtectedRoute />}>
+            <Route path="/" element={<Landing />} />
+            <Route element={<ProtectedRoute />}>
               <Route element={<AppLayout />}>
-                <Route index element={<RootRedirect />} />
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="clubs" element={<Clubs />} />
                 <Route path="clubs/:id" element={<ClubDetails />} />
