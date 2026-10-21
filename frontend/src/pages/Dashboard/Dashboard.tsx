@@ -6,7 +6,7 @@ import { UserDisplay } from '../../components/UserDisplay';
 import { EventCard } from '../../components/events/EventCard';
 import { EventForm } from '../../components/events/EventForm';
 import { StudentDashboardPage } from './StudentDashboardPage';
-import { isEventPast, useLocalDay } from '../../eventDate';
+import { partitionEvents, useLocalDay } from '../../eventDate';
 import { usePageLoading } from '../../context/LoadingContext';
 import LoadingScreen from '../../components/LoadingScreen';
 
@@ -70,12 +70,7 @@ export default function Dashboard() {
           const allPendingReqs = reqResults.flat().filter((r: any) => r.status === 'pending');
           setPendingRequests(allPendingReqs);
 
-          const upcoming = allEvts
-            .filter((e: any) => !isEventPast(e.eventDate || e.date))
-            .sort((a: any, b: any) => new Date(a.eventDate || a.date).getTime() - new Date(b.eventDate || b.date).getTime());
-          const past = allEvts
-            .filter((e: any) => isEventPast(e.eventDate || e.date))
-            .sort((a: any, b: any) => new Date(b.eventDate || b.date).getTime() - new Date(a.eventDate || a.date).getTime());
+          const { upcoming, past } = partitionEvents(allEvts);
 
           setUpcomingEvents(upcoming);
           setPastEvents(past);
@@ -97,12 +92,7 @@ export default function Dashboard() {
             withoutCoordinator: allClubs.filter((c: any) => !c.facultyCoordinatorId).length,
           });
 
-          const upcoming = allEvts
-            .filter((e: any) => !isEventPast(e.eventDate || e.date))
-            .sort((a: any, b: any) => new Date(a.eventDate || a.date).getTime() - new Date(b.eventDate || b.date).getTime());
-          const past = allEvts
-            .filter((e: any) => isEventPast(e.eventDate || e.date))
-            .sort((a: any, b: any) => new Date(b.eventDate || b.date).getTime() - new Date(a.eventDate || a.date).getTime());
+          const { upcoming, past } = partitionEvents(allEvts);
 
           setUpcomingEvents(upcoming);
           setPastEvents(past);

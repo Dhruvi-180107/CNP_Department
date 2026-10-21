@@ -9,6 +9,19 @@ export function isEventPast(value: string | Date | null | undefined, today = new
     < new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
 }
 
+type EventDateRecord = { eventDate?: string | Date | null; date?: string | Date | null };
+
+/** Split events by local calendar day and keep each group in its existing display order. */
+export function partitionEvents<T extends EventDateRecord>(events: T[]) {
+  const eventTime = (event: T) => new Date((event.eventDate || event.date) as string).getTime();
+  const upcoming = events.filter(event => !isEventPast(event.eventDate || event.date));
+  const past = events.filter(event => isEventPast(event.eventDate || event.date));
+
+  upcoming.sort((a, b) => eventTime(a) - eventTime(b));
+  past.sort((a, b) => eventTime(b) - eventTime(a));
+  return { upcoming, past };
+}
+
 /** A stable local-date key that updates automatically just after local midnight. */
 export function useLocalDay(): string {
   const [day, setDay] = useState(() => new Date().toDateString());
