@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 export const NAVIGATION = [
@@ -34,8 +34,15 @@ function NavIcon({ id }: { id: string }) {
 
 export function Sidebar() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   if (!user) return null;
+
+  // After signing out, go to the public landing page (not the login form).
+  const handleSignOut = () => {
+    navigate('/', { replace: true });
+    logout();
+  };
 
   return (
     <nav className="main-sidebar">
@@ -68,7 +75,7 @@ export function Sidebar() {
             <span className="user-role">{user.role.replace('_', ' ')}</span>
           </div>
         </div>
-        <button className="btn btn-outline btn-sm sign-out-btn" onClick={logout}>Sign Out</button>
+        <button className="btn btn-outline btn-sm sign-out-btn" onClick={handleSignOut}>Sign Out</button>
       </div>
     </nav>
   );
