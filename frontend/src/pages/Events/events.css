@@ -1,0 +1,1040 @@
+/* Hallmark · shape: calendar + day rail · genre: modern-minimal · theme: Cobalt · axes: light/grotesk-sans/cool · posture: restrained */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Events · calendar, agenda, event detail, event card
+   Layout and composition only. Colour, space and type come from tokens.css;
+   keys, panels, rows, tags, fields and modals come from ui.css. Every class in
+   this file is prefixed .evt-.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Area baseline ───────────────────────────────────────────────────────
+   The shell contract applies these to .shell-content. Repeating them at zero
+   specificity keeps the area correct while the page still renders inside the
+   legacy .main-content, and can never override a primitive class. */
+:where(.evt-page, .evt-card) {
+  color: var(--color-ink-2);
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+:where(.evt-page) :where(p, h1, h2, h3, dl, dd, figure) {
+  margin: 0;
+  padding: 0;
+}
+:where(.evt-page) :where(h1, h2, h3) {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  letter-spacing: var(--tracking-display);
+  line-height: 1.1;
+  color: var(--color-ink);
+  text-wrap: balance;
+}
+:where(.evt-page) :where(ul, ol) {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+:where(.evt-page) :where(a) { color: inherit; text-decoration: none; }
+:where(.evt-page) :where(svg) { display: block; }
+
+/* The shell supplies the ring once it lands; this matches it exactly and keeps
+   the legacy shell from falling back to the UA outline. Zero specificity so a
+   primitive's own focus treatment (fields) always wins. */
+:where(.evt-page, .evt-card) :focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* Legacy app.css styles bare input/select/textarea elements at a specificity
+   (.0.1.1) that outranks the .ui-field class, so the two layers would disagree
+   inside the form. Re-assert the primitive's own values for this area only.
+   Remove this block once app.css stops styling bare fields. */
+.evt-page :is(input, select, textarea).ui-field {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 var(--space-sm);
+  border: var(--rule-hair) solid var(--color-rule-2);
+  border-radius: var(--radius-input);
+  background: var(--color-sheet);
+  color: var(--color-ink);
+  font: 400 var(--text-sm)/1.4 var(--font-body);
+  box-shadow: none;
+}
+.evt-page :is(input, select, textarea).ui-field:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-wash);
+}
+.evt-page textarea.ui-field--area {
+  padding: var(--space-xs) var(--space-sm);
+  min-height: 96px;
+}
+.evt-page select.ui-field--select { padding-right: var(--space-xl); }
+.evt-page :is(input, select, textarea).ui-field:disabled {
+  color: var(--color-muted);
+  background: var(--color-paper-2);
+}
+
+/* Legacy `label` sets uppercase tracking that .ui-label never resets. */
+.evt-page .ui-label {
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* ── Keys reset ──────────────────────────────────────────────────────────
+   base.css only resets buttons inside .landing, so custom keys here would
+   otherwise keep the UA outset border and its system font. Zero specificity,
+   so every rule below can still compose its own border and background. */
+:where(.evt-page) :where(.evt-chip, .evt-day__num, .evt-day__more, .evt-entry__open, .evt-clubrow, .evt-view button) {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+/* ── Icons ───────────────────────────────────────────────────────────────── */
+
+.evt-i {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.evt-i--sm { width: 14px; height: 14px; }
+.evt-i--xs { width: 1em; height: 1em; }
+.evt-i--lg { width: 20px; height: 20px; }
+
+/* ── Page head ───────────────────────────────────────────────────────────── */
+
+.evt-page { min-width: 0; }
+
+.evt-page__title { margin: 0; }
+
+/* Real counts, set as a ledger rather than a sentence. */
+.evt-ledger {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2xs) 0;
+  margin-top: var(--space-xs);
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+.evt-ledger > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2xs);
+}
+.evt-ledger > span + span {
+  padding-left: var(--space-md);
+  margin-left: var(--space-md);
+  border-left: var(--rule-hair) solid var(--color-rule-2);
+}
+.evt-ledger__n {
+  font: var(--display-weight) var(--text-md)/1 var(--font-display);
+  letter-spacing: var(--tracking-display);
+  color: var(--color-ink);
+}
+
+.evt-select {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 184px;
+}
+.evt-select .ui-field { padding-right: var(--space-xl); }
+.evt-select > svg {
+  position: absolute;
+  right: var(--space-sm);
+  color: var(--color-muted);
+  pointer-events: none;
+}
+
+.evt-view { flex: none; }
+
+/* ── Month composition ───────────────────────────────────────────────────── */
+
+.evt-month {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-lg);
+  align-items: start;
+}
+@media (min-width: 75rem) {
+  .evt-month { grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); }
+  .evt-rail { position: sticky; top: var(--space-md); }
+}
+
+.evt-rail {
+  display: grid;
+  gap: var(--space-lg);
+  align-content: start;
+  min-width: 0;
+}
+
+.evt-cal {
+  overflow: hidden;
+  container-type: inline-size;
+  container-name: evtcal;
+}
+
+.evt-cal__head {
+  flex-wrap: wrap;
+  row-gap: var(--space-xs);
+  background: var(--color-sheet);
+}
+.evt-cal__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  margin-left: auto;
+}
+
+.evt-cal__scroll { overflow-x: auto; }
+
+.evt-cal__foot {
+  flex-wrap: wrap;
+  row-gap: var(--space-2xs);
+}
+
+.evt-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2xs) var(--space-md);
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+.evt-legend > span { display: inline-flex; align-items: center; gap: var(--space-2xs); }
+.evt-legend__mark {
+  width: var(--space-xs);
+  height: var(--space-xs);
+  border-left: 2px solid var(--color-positive);
+  border-radius: 0 2px 2px 0;
+  background: var(--color-paper-2);
+}
+.evt-legend__mark.is-past { border-left-color: var(--color-rule-2); }
+.evt-cal__hint { font-size: var(--text-xs); color: var(--color-muted); }
+
+.evt-day__dots { display: none; }
+
+.evt-day__dot {
+  width: var(--space-2xs);
+  height: var(--space-2xs);
+  border-radius: 1px;
+  background: var(--color-positive);
+  flex: none;
+}
+.evt-day__dot.is-past { background: var(--color-rule-2); }
+
+.evt-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border-bottom: var(--rule-hair) solid var(--color-rule);
+  background: var(--color-paper-2);
+}
+.evt-week > span {
+  padding: var(--space-2xs) var(--space-xs);
+  font: 500 var(--text-xs)/1.4 var(--font-body);
+  color: var(--color-muted);
+}
+
+.evt-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.evt-day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  min-height: calc(var(--space-2xl) + var(--space-md));
+  padding: var(--space-2xs) var(--space-xs) var(--space-xs);
+  border-right: var(--rule-hair) solid var(--color-rule);
+  border-bottom: var(--rule-hair) solid var(--color-rule);
+  transition: background-color var(--dur-short) var(--ease-in-out);
+}
+.evt-day:nth-child(7n) { border-right: 0; }
+
+.evt-day:hover { background: var(--color-paper-2); }
+
+.evt-day--blank { pointer-events: none; }
+
+.evt-day.is-today { background: var(--color-paper-2); }
+
+.evt-day.is-selected {
+  background: var(--color-accent-wash);
+  box-shadow: inset 0 0 0 1px var(--color-accent-2);
+}
+.evt-day.is-selected:hover { background: var(--color-accent-wash); }
+
+.evt-day__num {
+  display: inline-grid;
+  place-items: center;
+  align-self: flex-start;
+  min-width: var(--space-lg);
+  height: var(--space-lg);
+  padding-inline: var(--space-3xs);
+  border-radius: 4px;
+  font: 500 var(--text-sm)/1 var(--font-display);
+  color: var(--color-ink-2);
+  transition:
+    background-color var(--dur-short) var(--ease-in-out),
+    color var(--dur-short) var(--ease-in-out);
+}
+.evt-day__num:hover { background: var(--color-paper-3); color: var(--color-ink); }
+
+.evt-day.is-today .evt-day__num {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+.evt-day.is-selected .evt-day__num { color: var(--color-accent-deep); }
+.evt-day.is-today.is-selected .evt-day__num { color: var(--color-accent-ink); }
+
+.evt-day__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3xs);
+}
+
+.evt-day__events {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.evt-chip {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 1px var(--space-2xs) 1px var(--space-2xs);
+  border-left: 2px solid var(--color-positive);
+  border-radius: 0 3px 3px 0;
+  background: transparent;
+  color: var(--color-ink-2);
+  font: 400 var(--text-xs)/1.45 var(--font-body);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-short) var(--ease-in-out),
+    color var(--dur-short) var(--ease-in-out),
+    border-color var(--dur-short) var(--ease-in-out);
+}
+.evt-chip:hover {
+  background: var(--color-paper-3);
+  border-left-color: var(--color-positive);
+  color: var(--color-ink);
+}
+.evt-chip.is-past {
+  border-left-color: var(--color-rule-2);
+  color: var(--color-muted);
+}
+.evt-chip.is-past:hover {
+  border-left-color: var(--color-muted);
+  color: var(--color-ink-2);
+}
+
+.evt-day__more {
+  padding: 0 var(--space-3xs);
+  font: 500 var(--text-xs)/1.4 var(--font-body);
+  color: var(--color-muted);
+  transition: color var(--dur-short) var(--ease-in-out);
+}
+.evt-day__more:hover { color: var(--color-accent-deep); }
+
+/* The smallest grid drops the ruled chips for dots: seven days stay visible on
+   a phone instead of pushing the weekend into a horizontal scroll. */
+@container evtcal (max-width: 30rem) {
+  .evt-day {
+    min-height: var(--space-2xl);
+    gap: 2px;
+    padding: var(--space-3xs) var(--space-3xs) var(--space-2xs);
+  }
+  .evt-day__events { display: none; }
+  .evt-day__dots {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+    padding-left: 1px;
+  }
+  .evt-day__num {
+    min-width: var(--space-lg);
+    height: var(--space-lg);
+    font-size: var(--text-xs);
+  }
+  .evt-day__more { padding: 0; }
+  .evt-week > span { padding-inline: var(--space-3xs); }
+}
+
+/* ── Selected day panel ──────────────────────────────────────────────────── */
+
+.evt-side { min-width: 0; }
+
+.evt-clublist { display: block; }
+
+.evt-clubrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  width: 100%;
+  padding: var(--space-xs) var(--space-lg);
+  border-bottom: var(--rule-hair) solid var(--color-rule);
+  font-size: var(--text-sm);
+  color: var(--color-ink-2);
+  text-align: left;
+  transition:
+    background-color var(--dur-short) var(--ease-in-out),
+    color var(--dur-short) var(--ease-in-out);
+}
+.evt-clublist li:last-child .evt-clubrow { border-bottom: 0; }
+button.evt-clubrow { cursor: pointer; }
+button.evt-clubrow:hover { background: var(--color-paper-2); color: var(--color-ink); }
+button.evt-clubrow[aria-pressed="true"] { background: var(--color-accent-wash); color: var(--color-accent-deep); }
+
+.evt-clubrow__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.evt-side__empty {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-xs);
+  padding: var(--space-lg);
+}
+.evt-side__empty .ui-empty__text { max-width: 32ch; }
+
+/* ── Event entries (agenda + selected day) ───────────────────────────────── */
+
+.evt-list { display: block; }
+
+.evt-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  padding-right: var(--space-sm);
+  border-bottom: var(--rule-hair) solid var(--color-rule);
+  transition: background-color var(--dur-short) var(--ease-in-out);
+}
+.evt-entry:last-child { border-bottom: 0; }
+.evt-entry:hover { background: var(--color-paper-2); }
+
+.evt-entry__open {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-xs);
+  padding: var(--space-sm) 0 var(--space-sm) var(--space-md);
+  text-align: left;
+}
+
+.evt-entry__time {
+  padding-top: 1px;
+  font: 500 var(--text-xs)/1.5 var(--font-body);
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.evt-entry__body { min-width: 0; }
+
+.evt-entry__meta-place {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.evt-entry__meta-place .evt-dot {
+  display: inline-block;
+  margin-inline: var(--space-2xs);
+  vertical-align: middle;
+}
+
+.evt-entry__past { flex: none; }
+
+.evt-entry__open--agenda {
+  grid-template-columns: 4.25rem minmax(0, 1fr) minmax(0, 11rem) minmax(0, 13rem) auto;
+}
+.evt-entry__club,
+.evt-entry__venue {
+  display: none;
+  align-self: center;
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+@media (min-width: 64rem) {
+  .evt-entry__club,
+  .evt-entry__venue { display: block; }
+  .evt-entry__open--agenda .evt-entry__meta-place { display: none; }
+}
+
+.evt-entry__title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 500 var(--text-sm)/1.35 var(--font-display);
+  letter-spacing: -0.01em;
+  color: var(--color-ink);
+  transition: color var(--dur-short) var(--ease-in-out);
+}
+.evt-entry__open:hover .evt-entry__title { color: var(--color-accent-deep); }
+
+.evt-entry__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-2xs);
+  margin-top: 1px;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--color-muted);
+}
+.evt-entry__meta > span { min-width: 0; }
+
+.evt-dot {
+  width: 2px;
+  height: 2px;
+  flex: none;
+  border-radius: 1px;
+  background: var(--color-rule-2);
+}
+
+.evt-entry__go {
+  align-self: center;
+  color: var(--color-muted);
+  opacity: 0.6;
+  transition:
+    color var(--dur-short) var(--ease-in-out),
+    opacity var(--dur-short) var(--ease-in-out),
+    transform var(--dur-short) var(--ease-out);
+}
+.evt-entry__open:hover .evt-entry__go {
+  color: var(--color-accent);
+  opacity: 1;
+  transform: translateX(3px);
+}
+
+.evt-entry__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  flex: none;
+  opacity: 0;
+  transform: translateX(4px);
+  transition:
+    opacity var(--dur-short) var(--ease-out),
+    transform var(--dur-short) var(--ease-out);
+}
+.evt-entry:hover .evt-entry__actions,
+.evt-entry:focus-within .evt-entry__actions {
+  opacity: 1;
+  transform: none;
+}
+.evt-entry__actions .ui-icon-btn { width: var(--space-lg); height: var(--space-lg); }
+.evt-entry__actions .ui-icon-btn svg { width: 14px; height: 14px; }
+
+@media (hover: none) {
+  .evt-entry__actions { opacity: 1; transform: none; }
+}
+
+/* ── Agenda ──────────────────────────────────────────────────────────────── */
+
+.evt-agenda { display: grid; gap: var(--space-lg); }
+
+.evt-group__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-xs) var(--space-lg);
+  background: var(--color-paper-2);
+  border-top: var(--rule-hair) solid var(--color-rule);
+  border-bottom: var(--rule-hair) solid var(--color-rule);
+}
+.evt-group:first-child .evt-group__head { border-top: 0; }
+.evt-group__head--tight { padding: var(--space-2xs) var(--space-md); }
+
+.evt-group__date {
+  font: 500 var(--text-sm)/1.4 var(--font-display);
+  color: var(--color-ink);
+}
+.evt-group__meta {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.evt-past {
+  border: var(--rule-hair) solid var(--color-rule-2);
+  border-radius: var(--radius-card);
+  background: var(--color-sheet);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.evt-past > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-lg);
+  cursor: pointer;
+  list-style: none;
+  font: 500 var(--text-sm)/1.3 var(--font-display);
+  color: var(--color-ink-2);
+  transition:
+    background-color var(--dur-short) var(--ease-in-out),
+    color var(--dur-short) var(--ease-in-out);
+}
+.evt-past > summary::-webkit-details-marker { display: none; }
+.evt-past > summary::marker { content: ""; }
+.evt-past > summary:hover { background: var(--color-paper-2); color: var(--color-ink); }
+.evt-past[open] > summary { border-bottom: var(--rule-hair) solid var(--color-rule); }
+
+.evt-past__chev {
+  color: var(--color-muted);
+  transition: transform var(--dur-short) var(--ease-out);
+}
+.evt-past[open] .evt-past__chev { transform: rotate(180deg); }
+
+.evt-past__label { margin-right: auto; }
+.evt-past__body { background: var(--color-sheet); }
+
+/* ── Shared date block ───────────────────────────────────────────────────── */
+
+.evt-dateblock {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 1px;
+  width: var(--space-xl);
+  padding: var(--space-3xs) 0;
+  border: var(--rule-hair) solid var(--color-rule-2);
+  border-radius: var(--radius-input);
+  background: var(--color-paper-2);
+  flex: none;
+}
+.evt-dateblock__m {
+  font: 500 var(--text-xs)/1.2 var(--font-body);
+  color: var(--color-muted);
+}
+.evt-dateblock__d {
+  font: var(--display-weight) var(--text-lg)/1 var(--font-display);
+  letter-spacing: var(--tracking-display);
+  color: var(--color-ink);
+}
+.evt-dateblock--lg { width: var(--space-2xl); }
+.evt-dateblock--lg .evt-dateblock__d { font-size: var(--text-xl); }
+
+/* ── Event detail modal ──────────────────────────────────────────────────── */
+
+.evt-modal__sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2xs) var(--space-xs);
+  margin-top: var(--space-2xs);
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+/* Head and foot stay put; only the body scrolls on short screens. */
+.evt-modal,
+.evt-form-modal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.evt-modal > .ui-modal__head,
+.evt-form-modal > .ui-modal__head,
+.evt-modal > .ui-modal__foot { flex: none; }
+.evt-modal > .ui-modal__body { overflow-y: auto; min-height: 0; }
+.evt-form { display: flex; flex-direction: column; min-height: 0; }
+.evt-form > .ui-modal__body { overflow-y: auto; min-height: 0; }
+.evt-form > .ui-modal__foot { flex: none; }
+
+.evt-detail__lead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+}
+.evt-detail__when { min-width: 0; }
+.evt-detail__day {
+  font: 500 var(--text-md)/1.35 var(--font-display);
+  letter-spacing: -0.012em;
+  color: var(--color-ink);
+}
+.evt-detail__clock {
+  margin-top: 2px;
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+
+.evt-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-md) var(--space-lg);
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: var(--rule-hair) solid var(--color-rule);
+}
+.evt-fact { min-width: 0; }
+.evt-fact dt {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+.evt-fact dd {
+  margin-top: 2px;
+  font-size: var(--text-sm);
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+
+.evt-detail__desc {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: var(--rule-hair) solid var(--color-rule);
+  max-width: 68ch;
+  font-size: var(--text-sm);
+  line-height: 1.65;
+  color: var(--color-ink-2);
+  white-space: pre-line;
+}
+
+.evt-detail__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-md);
+}
+
+.evt-confirm__text {
+  font-size: var(--text-sm);
+  color: var(--color-ink-2);
+}
+
+/* ── Form ────────────────────────────────────────────────────────────────── */
+
+.evt-form__body { display: grid; gap: var(--space-md); }
+
+.evt-form__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+.evt-form__doc {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-2xs);
+  padding: var(--space-2xs) var(--space-sm);
+  border: var(--rule-hair) solid var(--color-rule-2);
+  border-radius: var(--radius-input);
+  background: var(--color-paper-2);
+  font-size: var(--text-xs);
+  color: var(--color-ink-2);
+}
+.evt-form__docname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evt-file {
+  width: 100%;
+  font: 400 var(--text-xs)/1.4 var(--font-body);
+  color: var(--color-muted);
+}
+.evt-file::file-selector-button {
+  margin-right: var(--space-sm);
+  padding: var(--space-2xs) var(--space-sm);
+  border: var(--rule-hair) solid var(--color-rule-2);
+  border-radius: 4px;
+  background: var(--color-paper-2);
+  color: var(--color-ink-2);
+  font: 500 var(--text-xs)/1.4 var(--font-body);
+  cursor: pointer;
+  transition: background-color var(--dur-short) var(--ease-in-out);
+}
+.evt-file::file-selector-button:hover { background: var(--color-paper-3); }
+
+/* ── Event card (dashboards, club detail) ────────────────────────────────── */
+
+.evt-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-sheet);
+  border: var(--rule-hair) solid var(--color-rule-2);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  transition:
+    border-color var(--dur-short) var(--ease-in-out),
+    background-color var(--dur-short) var(--ease-in-out);
+}
+.evt-card:hover,
+.evt-card:focus-within { border-color: var(--color-accent-2); }
+
+.evt-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: var(--radius-card) 0 0 var(--radius-card);
+  background: var(--color-accent);
+  transform: scaleY(0);
+  transform-origin: center;
+  transition: transform var(--dur-short) var(--ease-out);
+}
+.evt-card:hover::after,
+.evt-card:focus-within::after { transform: scaleY(1); }
+
+.evt-card.is-past { background: var(--color-paper-2); box-shadow: none; }
+
+.evt-card__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  min-width: 0;
+}
+
+.evt-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  min-height: 22px;
+}
+
+.evt-card__club {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+.evt-card__club > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.evt-card__logo {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 3px;
+  object-fit: cover;
+}
+
+/* Status yields to the manage actions on hover: the sanctioned reveal. */
+.evt-card__slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+.evt-card__status {
+  transition: opacity var(--dur-short) var(--ease-in-out);
+}
+.evt-card__actions {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: opacity var(--dur-short) var(--ease-in-out);
+}
+.evt-card:hover .evt-card__actions,
+.evt-card:focus-within .evt-card__actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.evt-card:hover .evt-card__status,
+.evt-card:focus-within .evt-card__status { opacity: 0; }
+
+.evt-card__actions .ui-icon-btn { width: var(--space-lg); height: var(--space-lg); }
+.evt-card__actions .ui-icon-btn svg { width: 14px; height: 14px; }
+.evt-card__actions .ui-icon-btn{ color: var(--color-ink-2); }
+.evt-card__actions .ui-icon-btn.is-danger { color: var(--color-negative); }
+
+/* No hover to reveal with: status and actions both stay, stacked. */
+@media (hover: none) {
+  .evt-card__slot {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--space-3xs);
+  }
+  .evt-card__actions {
+    position: static;
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+}
+
+.evt-card__title {
+  font: 500 var(--text-md)/1.3 var(--font-display);
+  letter-spacing: -0.012em;
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.evt-card.is-past .evt-card__title { color: var(--color-ink-2); }
+
+.evt-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3xs) var(--space-2xs);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--color-muted);
+}
+.evt-card__meta > span { display: inline-flex; align-items: center; gap: var(--space-3xs); min-width: 0; }
+.evt-card__meta .ui-truncate { max-width: 100%; }
+
+.evt-card__desc {
+  margin-top: var(--space-3xs);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--color-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.evt-card__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs) var(--space-sm);
+  margin-top: var(--space-2xs);
+}
+
+.evt-card__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  max-width: 100%;
+  padding-bottom: 1px;
+  border-bottom: 1px solid transparent;
+  font-size: var(--text-xs);
+  color: var(--color-accent-deep);
+  transition: border-color var(--dur-short) var(--ease-in-out);
+}
+.evt-card__link:hover { border-bottom-color: currentColor; }
+.evt-card__link > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evt-card--compact { padding: var(--space-xs) var(--space-sm); gap: var(--space-xs); }
+.evt-card--compact .evt-card__title { font-size: var(--text-sm); }
+.evt-card--compact .evt-dateblock { padding-block: var(--space-3xs); }
+.evt-card--compact .evt-dateblock__d { font-size: var(--text-md); }
+
+/* ── Loading skeleton ────────────────────────────────────────────────────── */
+
+.evt-skel { height: var(--space-sm); }
+.evt-skel--title { width: 8rem; height: var(--space-lg); }
+.evt-skel--sub { width: 16rem; margin-top: var(--space-xs); }
+.evt-skel--bar { width: 10rem; }
+.evt-skel--line { width: 60%; height: var(--space-2xs); }
+.evt-skel-cell {
+  min-height: var(--space-3xl);
+  padding: var(--space-2xs) var(--space-xs);
+  border-right: var(--rule-hair) solid var(--color-rule);
+  border-bottom: var(--rule-hair) solid var(--color-rule);
+}
+.evt-skel-cell:nth-child(7n) { border-right: 0; }
+
+/* ── Narrow screens ──────────────────────────────────────────────────────── */
+
+@media (max-width: 48rem) {
+  .evt-select { flex: 1 1 100%; min-width: 0; }
+  .evt-page-actions { width: 100%; }
+  .evt-view { flex: 1 1 auto; }
+  .evt-view button { flex: 1; }
+  .evt-entry__open {
+    grid-template-columns: 3.25rem minmax(0, 1fr);
+    padding-left: var(--space-sm);
+  }
+  .evt-entry__go { display: none; }
+  .evt-entry__meta { flex-wrap: wrap; }
+  .evt-facts { grid-template-columns: minmax(0, 1fr); }
+  .evt-form__grid { grid-template-columns: minmax(0, 1fr); }
+  .evt-group__head { padding-inline: var(--space-md); }
+  .evt-ledger { gap: var(--space-2xs) var(--space-md); }
+  .evt-ledger > span + span {
+    padding-left: 0;
+    margin-left: 0;
+    border-left: 0;
+  }
+}
+
+@media (max-width: 30rem) {
+  .evt-modal .ui-modal__foot,
+  .evt-form-modal .ui-modal__foot {
+    flex-wrap: wrap;
+    row-gap: var(--space-xs);
+  }
+  .evt-confirm__text { flex: 1 1 100%; }
+}
+
+/* Pressed feedback for the keys that are not .ui-btn. */
+:where(.evt-page) :where(.evt-chip, .evt-day__num, .evt-day__more, .evt-entry__open, .evt-clubrow):active {
+  background: var(--color-paper-3);
+}
+.evt-past > summary:active { background: var(--color-paper-3); }
+
+/* ── Motion floor ────────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .evt-page *,
+  .evt-page *::before,
+  .evt-page *::after,
+  .evt-card,
+  .evt-card *,
+  .evt-card *::before,
+  .evt-card *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

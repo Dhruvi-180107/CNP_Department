@@ -1,65 +1,69 @@
 import type { User } from '../../../types';
+import { formatLongDate } from './studentUtils';
+import { ArrowRightIcon } from './StudentIcons';
 
 interface StudentDashboardHeaderProps {
   user: User;
-  unreadCount: number;
   onExploreClubs: () => void;
   onExploreProjects: () => void;
-  onNotifications: () => void;
+  /** Calendar days to the next event, derived from the upcoming-events fetch. */
+  nextEventInDays?: number | null;
+  /** `null` when the calendar fetch failed — the line then says so. */
+  upcomingCount?: number | null;
 }
 
-function formatToday(): string {
-  return new Date().toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  });
+function greetingFor(hour: number): string {
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
 }
 
 function contextLine(user: User): string {
   const parts: string[] = [];
   if (user.department?.trim()) parts.push(user.department.trim());
   if (user.semester) parts.push(`Semester ${user.semester}`);
-  if (user.enrollmentNumber?.trim()) parts.push(user.enrollmentNumber.trim());
-  return parts.length ? parts.join(' · ') : 'Student Managed Clubs & GUIITAR';
+  return parts.length ? parts.join(', ') : 'Student Managed Clubs and GUIITAR';
+}
+
+function stateLine(upcomingCount: number | null, nextEventInDays: number | null): string {
+  if (upcomingCount === null) return 'Calendar unavailable';
+  if (upcomingCount === 0) return 'No events on the calendar';
+  if (nextEventInDays === null) return `${upcomingCount} upcoming`;
+  if (nextEventInDays <= 0) return 'Next event today';
+  if (nextEventInDays === 1) return 'Next event tomorrow';
+  return `Next event in ${nextEventInDays} days`;
 }
 
 export function StudentDashboardHeader({
   user,
-  unreadCount,
   onExploreClubs,
   onExploreProjects,
-  onNotifications,
+  nextEventInDays = null,
+  upcomingCount = 0,
 }: StudentDashboardHeaderProps) {
   const firstName = user.name.trim().split(/\s+/)[0] || user.name;
+  const now = new Date();
 
   return (
-    <header className="student-dash-header">
-      <div className="student-dash-header-copy">
-        <p className="student-dash-eyebrow">{formatToday()}</p>
-        <h2 className="student-dash-title">
-          Welcome back, <span className="student-dash-title-accent">{firstName}</span>
-        </h2>
-        <p className="student-dash-lede">{contextLine(user)}</p>
+    <header className="ui-page-head sd-head">
+      <div className="ui-page-head__text sd-head__text">
+        <h1 className="ui-title">
+          {greetingFor(now.getHours())}, {firstName}
+        </h1>
+        <p className="sd-head__meta">
+          <span className="sd-head__seg">{formatLongDate(now)}</span>
+          <span className="sd-head__seg">{contextLine(user)}</span>
+          <span className="sd-head__seg sd-head__state">{stateLine(upcomingCount, nextEventInDays)}</span>
+        </p>
       </div>
-      <div className="student-dash-header-actions">
-        <button
-          type="button"
-          className="student-dash-notification-link"
-          onClick={onNotifications}
-          aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
-        >
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span>Notifications</span>
-          {unreadCount > 0 ? <span className="student-dash-notification-count">{unreadCount > 99 ? '99+' : unreadCount}</span> : null}
+
+      <div className="ui-page-actions sd-head__actions">
+        <button type="button" className="ui-btn ui-btn--quiet" onClick={onExploreProjects}>
+          Browse projects
         </button>
-        <button type="button" className="btn btn-outline btn-sm" onClick={onExploreClubs}>
-          Explore clubs
-        </button>
-        <button type="button" className="btn btn-primary btn-sm" onClick={onExploreProjects}>
-          Explore projects
+        <button type="button" className="ui-btn ui-btn--primary" onClick={onExploreClubs}>
+          Browse clubs
+          <ArrowRightIcon className="sd-icon sd-icon--sm sd-arrow" />
         </button>
       </div>
     </header>

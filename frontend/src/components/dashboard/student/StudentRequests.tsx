@@ -1,5 +1,5 @@
-import { useNavigate } from 'react-router-dom';
-import { DashboardSection } from './DashboardSection';
+import { Link } from 'react-router-dom';
+import { requestStatus, requestTarget, tagToneClass } from './studentUtils';
 import type { StudentJoinRequest } from '../../../types/studentDashboard';
 
 interface StudentRequestsProps {
@@ -7,78 +7,68 @@ interface StudentRequestsProps {
   error?: string;
 }
 
-function requestTargetName(req: StudentJoinRequest): string {
-  if (req.clubId && typeof req.clubId === 'object' && req.clubId.name) return req.clubId.name;
-  if (req.projectId && typeof req.projectId === 'object' && req.projectId.name) return req.projectId.name;
-  return 'Unknown';
-}
-
-function requestKind(req: StudentJoinRequest): 'Club' | 'Project' {
-  return req.clubId ? 'Club' : 'Project';
-}
-
-function statusClass(status: string): string {
-  if (status === 'pending') return 'student-dash-status student-dash-status--pending';
-  if (status === 'approved') return 'student-dash-status student-dash-status--approved';
-  if (status === 'rejected') return 'student-dash-status student-dash-status--rejected';
-  return 'student-dash-status';
-}
-
 export function StudentRequests({ requests, error }: StudentRequestsProps) {
-  const navigate = useNavigate();
-  const pending = requests.filter((r) => r.status === 'pending');
-  const recent = requests.filter((r) => r.status !== 'pending').slice(0, 3);
-  const display = [...pending, ...recent].slice(0, 5);
+  const pending = requests.filter((request) => request.status === 'pending');
+  const display = [
+    ...pending,
+    ...requests.filter((request) => request.status !== 'pending'),
+  ].slice(0, 4);
+  const hidden = requests.length - display.length;
+
+  const meta = pending.length > 0
+    ? `${pending.length} awaiting a decision`
+    : requests.length > 0
+      ? `${requests.length} on file, none pending`
+      : null;
 
   return (
-    <DashboardSection
-      id="student-requests"
-      eyebrow="Applications"
-      title="Join requests"
-      count={pending.length > 0 ? pending.length : undefined}
-    >
-      {error ? (
-        <div className="student-dash-inline-error" role="alert">
-          {error}
-        </div>
-      ) : display.length === 0 ? (
-        !error && (
-          <p className="student-dash-aside-empty">
-            No join requests on file. Apply from a club or project page when you find a fit.
-          </p>
-        )
-      ) : (
-        <ul className="student-dash-request-list">
-          {display.map((req) => {
-            const kind = requestKind(req);
-            const targetId =
-              kind === 'Club'
-                ? typeof req.clubId === 'object'
-                  ? req.clubId?._id
-                  : req.clubId
-                : typeof req.projectId === 'object'
-                  ? req.projectId?._id
-                  : req.projectId;
+    <section className="sd-strip" aria-labelledby="sd-requests-heading">
+      <div className="sd-strip__lead">
+        <h2 className="sd-strip__title" id="sd-requests-heading">
+          Join requests
+        </h2>
+        {meta ? <span className="sd-strip__meta">{meta}</span> : null}
+      </div>
 
+      {error ? (
+        <p className="sd-strip__error" role="alert">
+          {error}
+        </p>
+      ) : display.length === 0 ? (
+        <p className="sd-strip__empty">
+          No requests yet. <Link className="ui-link" to="/clubs">Find a club</Link> or a project to
+          apply.
+        </p>
+      ) : (
+        <ul className="sd-strip__items">
+          {display.map((request) => {
+            const target = requestTarget(request);
+            const status = requestStatus(request.status);
+            const body = (
+              <>
+                <span className="sd-chip__kind">{target.kind}</span>
+                <span className="sd-chip__name ui-truncate">{target.name}</span>
+                <span className={tagToneClass(status.tone)}>{status.label}</span>
+              </>
+            );
             return (
-              <li key={req._id}>
-                <button
-                  type="button"
-                  className="student-dash-request-row"
-                  onClick={() => {
-                    if (targetId) navigate(kind === 'Club' ? `/clubs/${targetId}` : `/projects/${targetId}`);
-                  }}
-                  disabled={!targetId}
-                >
-                  <span className="student-dash-request-kind">{kind}</span>
-                  <span className="student-dash-request-name">{requestTargetName(req)}</span>
-                  <span className={statusClass(req.status)}>{req.status}</span>
-                </button>
+              <li key={request._id}>
+                {target.id ? (
+                  <Link
+                    className="sd-chip"
+                    to={target.kind === 'Club' ? `/clubs/${target.id}` : `/projects/${target.id}`}
+                  >
+                    {body}
+                  </Link>
+                ) : (
+                  <span className="sd-chip">{body}</span>
+                )}
               </li>
             );
           })}
+          {hidden > 0 ? <li className="sd-strip__more">+{hidden} more</li> : null}
         </ul>
       )}
-    </DashboardSection>
+    </section>
   );
 }

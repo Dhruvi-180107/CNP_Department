@@ -40,6 +40,9 @@ const getAssetPath = (type, filename) => {
 };
 
 async function uploadAssetIfPresent(type, filename, folder, isRaw = false) {
+  if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+    return null;
+  }
   const p = getAssetPath(type, filename);
   if (!p) return null;
   if (isRaw) {

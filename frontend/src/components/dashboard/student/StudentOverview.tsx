@@ -1,48 +1,95 @@
 import type { StudentJoinRequest } from '../../../types/studentDashboard';
 
 interface StudentOverviewProps {
-  clubCount: number;
-  projectCount: number;
-  pendingRequestCount: number;
-  unreadNotifications: number;
+  /** `null` means the fetch failed — the strip says so instead of showing a zero. */
+  clubCount: number | null;
+  projectCount: number | null;
+  upcomingEventCount: number | null;
+  unreadNotifications: number | null;
+  pendingRequestCount: number | null;
+  coreTeamCount?: number;
+  teamLeadCount?: number;
+  nextEventInDays?: number | null;
+}
+
+function StatValue({ value }: { value: number | null }) {
+  if (value === null) {
+    return (
+      <p className="ui-stat__value">
+        <span aria-hidden="true">&mdash;</span>
+        <span className="ui-visually-hidden">Unavailable</span>
+      </p>
+    );
+  }
+  return <p className="ui-stat__value">{value}</p>;
 }
 
 export function StudentOverview({
   clubCount,
   projectCount,
-  pendingRequestCount,
+  upcomingEventCount,
   unreadNotifications,
+  pendingRequestCount,
+  coreTeamCount = 0,
+  teamLeadCount = 0,
+  nextEventInDays = null,
 }: StudentOverviewProps) {
-  const involvement =
-    clubCount === 0 && projectCount === 0
-      ? 'You are not in any clubs or projects yet—explore campus communities and GUIITAR teams when you are ready.'
-      : `You are active in ${clubCount} ${clubCount === 1 ? 'club' : 'clubs'} and ${projectCount} ${projectCount === 1 ? 'project' : 'projects'}.`;
+  const clubSub =
+    clubCount === null ? 'Not available' : coreTeamCount > 0 ? `${coreTeamCount} core team` : null;
 
-  const attention: string[] = [];
-  if (pendingRequestCount > 0) {
-    attention.push(
-      `${pendingRequestCount} join ${pendingRequestCount === 1 ? 'request awaits' : 'requests await'} a decision`
-    );
-  }
-  if (unreadNotifications > 0) {
-    attention.push(`${unreadNotifications} unread ${unreadNotifications === 1 ? 'notification' : 'notifications'}`);
-  }
+  const projectSub =
+    projectCount === null ? 'Not available' : teamLeadCount > 0 ? `${teamLeadCount} as team lead` : null;
+
+  const eventSub =
+    upcomingEventCount === null
+      ? 'Not available'
+      : upcomingEventCount === 0
+        ? 'Nothing scheduled'
+        : nextEventInDays === null
+          ? null
+          : nextEventInDays <= 0
+            ? 'Next event today'
+            : nextEventInDays === 1
+              ? 'Next event tomorrow'
+              : `Next in ${nextEventInDays} days`;
+
   return (
-    <div className="student-dash-overview" role="region" aria-label="Your overview">
-      <p className="student-dash-overview-summary">{involvement}</p>
-      {attention.length > 0 ? (
-        <ul className="student-dash-overview-attention">
-          {attention.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      ) : (
-        <p className="student-dash-overview-quiet">No pending requests or unread alerts right now.</p>
-      )}
-    </div>
+    <section className="ui-stats sd-stats" aria-label="Your activity at a glance">
+      <div className="ui-stat">
+        <StatValue value={clubCount} />
+        <p className="ui-stat__label">Clubs joined</p>
+        {clubSub ? <p className="sd-stat__sub">{clubSub}</p> : null}
+      </div>
+
+      <div className="ui-stat">
+        <StatValue value={projectCount} />
+        <p className="ui-stat__label">Projects joined</p>
+        {projectSub ? <p className="sd-stat__sub">{projectSub}</p> : null}
+      </div>
+
+      <div className="ui-stat">
+        <StatValue value={upcomingEventCount} />
+        <p className="ui-stat__label">Events ahead</p>
+        {eventSub ? <p className="sd-stat__sub">{eventSub}</p> : null}
+      </div>
+
+      <div className="ui-stat">
+        <StatValue value={unreadNotifications} />
+        <p className="ui-stat__label">Unread notices</p>
+        {unreadNotifications === 0 ? <p className="sd-stat__sub">All read</p> : null}
+      </div>
+
+      {pendingRequestCount !== null && pendingRequestCount > 0 ? (
+        <div className="ui-stat ui-stat--accent">
+          <p className="ui-stat__value">{pendingRequestCount}</p>
+          <p className="ui-stat__label">Requests waiting</p>
+          <p className="sd-stat__sub">With a reviewer</p>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
 export function countPendingRequests(requests: StudentJoinRequest[]): number {
-  return requests.filter((r) => r.status === 'pending').length;
+  return requests.filter((request) => request.status === 'pending').length;
 }
