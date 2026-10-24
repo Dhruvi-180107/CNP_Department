@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth, isProfileComplete } from './context/AuthContext';
 import { LoadingProvider, usePageLoading } from './context/LoadingContext';
@@ -96,12 +96,61 @@ function AuthRegisterGuard() {
   return <Register />;
 }
 
+/**
+ * The boot hold.
+ *
+ * Authentication usually resolves in a few milliseconds, which would cut the
+ * loader away before its cover finished opening. On a cold start the scene is
+ * held for a beat, the app is mounted underneath it, and the book then fades.
+ * A slow bootstrap is unaffected: the hold only pads, never truncates.
+ *
+ * The public page is exempt — it needs no identity, so it paints immediately.
+ */
+const BOOT_HOLD_MS = 900;
+const BOOT_LEAVE_MS = 220;
+
+function BootGate({ children }: { children: ReactNode }) {
+  const { loading } = useAuth();
+  const { pathname } = useLocation();
+  const isPublic = pathname === '/';
+  const startedAt = useRef(Date.now());
+  const [phase, setPhase] = useState<'hold' | 'leave' | 'done'>('hold');
+
+  useEffect(() => {
+    if (isPublic || loading || phase !== 'hold') return;
+    const elapsed = Date.now() - startedAt.current;
+    const open = window.setTimeout(
+      () => setPhase('leave'),
+      Math.max(0, BOOT_HOLD_MS - elapsed),
+    );
+    return () => window.clearTimeout(open);
+  }, [isPublic, loading, phase]);
+
+  useEffect(() => {
+    if (phase !== 'leave') return;
+    const gone = window.setTimeout(() => setPhase('done'), BOOT_LEAVE_MS);
+    return () => window.clearTimeout(gone);
+  }, [phase]);
+
+  if (isPublic) return <>{children}</>;
+
+  /* The loader keeps its position in the tree across the hand-off: remounting it
+     would start the cover from closed again. */
+  return (
+    <>
+      {phase === 'hold' ? null : children}
+      {phase === 'done' ? null : <LoadingScreen isReady={!loading} leaving={phase === 'leave'} />}
+    </>
+  );
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <LoadingProvider>
         <BrowserRouter>
-          <Routes>
+          <BootGate>
+            <Routes>
             <Route path="/login" element={<AuthGuard />} />
             <Route path="/register" element={<AuthRegisterGuard />} />
             <Route path="/" element={<Landing />} />
@@ -121,7 +170,8 @@ export default function App() {
                 </Route>
               </Route>
             </Route>
-          </Routes>
+            </Routes>
+          </BootGate>
           <RouteProgress />
           <ScrollReset />
         </BrowserRouter>

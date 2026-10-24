@@ -12,13 +12,15 @@ export interface LoadingScreenProps {
    */
   onComplete?: () => void;
   /**
-   * Caption text displayed below the progress hairline.
+   * Caption text displayed under the progress hairline.
    */
   caption?: string;
   /**
    * Whether to render as fixed full-screen overlay (true by default).
    */
   fullScreen?: boolean;
+  /** Fade the whole scene out (used while the app mounts underneath it). */
+  leaving?: boolean;
 }
 
 const ROUTE_LABELS: Record<string, string> = {
@@ -53,15 +55,23 @@ function prefersReducedMotionNow(): boolean {
 }
 
 /**
- * Route-transition loader. Four ticks of a hairline, the fourth held open until the
- * page reports it is ready, then the frame clears. Under reduced motion the ticks
- * are simply filled and the loader leaves as soon as the page is ready.
+ * Boot loader — the register opens.
+ *
+ * A closed cobalt cover stands over a ruled page; it swings back on its spine and
+ * the page underneath is what actually reports progress: the route, a four-tick
+ * hairline, and an honest caption. The cover is a real 3D leaf (front and inside
+ * faces), so the hinge reads at any width; under reduced motion it simply starts
+ * open.
+ *
+ * The fourth tick is the only one that waits: it closes when the caller says the
+ * page is ready, never on a timer.
  */
 export default function LoadingScreen({
   isReady = true,
   onComplete,
   caption,
   fullScreen = true,
+  leaving = false,
 }: LoadingScreenProps) {
   const location = useLocation();
   const [step, setStep] = useState(0);
@@ -120,14 +130,16 @@ export default function LoadingScreen({
     return () => window.clearTimeout(timer);
   }, [step, isReady, reducedMotion, finish]);
 
+  /* The loader never unmounts itself: its owner owns the exit. It reports
+     `onComplete` and the caller decides when the scene is gone (the boot gate
+     fades it over the incoming page). */
+
   /* Never outstay the route. */
   useEffect(() => {
     if (complete) return;
     const timer = window.setTimeout(finish, 2600);
     return () => window.clearTimeout(timer);
   }, [complete, finish]);
-
-  if (complete) return null;
 
   const label = routeLabel(location.pathname);
   // The fourth tick is held open while the page is still working: say so honestly.
@@ -138,45 +150,62 @@ export default function LoadingScreen({
       ? 'Ready.'
       : step >= 3 && !isReady
         ? 'Waiting for this page to finish loading…'
-        : `Loading ${label.toLowerCase()}…`);
+        : `Opening ${label.toLowerCase()}…`);
 
   return (
     <div
-      className={`shell-loader${fullScreen ? '' : ' shell-loader--inline'}`}
+      className={`shell-loader${fullScreen ? '' : ' shell-loader--inline'}${leaving ? ' is-leaving' : ''}`}
       role="status"
       aria-live="polite"
       aria-busy={!isReady}
       aria-label="Loading workspace"
     >
       <div className="shell-loader__inner">
-        <span className="shell-mark shell-mark--lg" aria-hidden="true">C</span>
+        <div className="shell-book">
+          {/* The page: what the report is printed on, revealed by the cover. */}
+          <div className="shell-book__page">
+            <div className="shell-loader__plate">
+              <span className="shell-book__mark shell-mark" aria-hidden="true">C</span>
 
-        <p className="shell-loader__route">{label}</p>
+              <p className="shell-loader__route">{label}</p>
 
-        <div
-          className="shell-loader__track"
-          role="progressbar"
-          aria-label="Loading progress"
-          aria-valuemin={0}
-          aria-valuemax={TOTAL_STEPS}
-          aria-valuenow={progress}
-          aria-valuetext={`${progress} of ${TOTAL_STEPS}`}
-        >
-          {Array.from({ length: TOTAL_STEPS }, (_, index) => {
-            const isOn = index < step;
-            const isWaiting = index === 3 && step >= 3 && !isReady && !reducedMotion;
-            return (
-              <span
-                key={index}
-                className={`shell-loader__seg${isOn ? ' is-on' : ''}${isWaiting ? ' is-waiting' : ''}`}
+              <div
+                className="shell-loader__track"
+                role="progressbar"
+                aria-label="Loading progress"
+                aria-valuemin={0}
+                aria-valuemax={TOTAL_STEPS}
+                aria-valuenow={progress}
+                aria-valuetext={`${progress} of ${TOTAL_STEPS}`}
               >
-                <span className="shell-loader__fill" />
-              </span>
-            );
-          })}
-        </div>
+                {Array.from({ length: TOTAL_STEPS }, (_, index) => {
+                  const isOn = index < step;
+                  const isWaiting = index === 3 && step >= 3 && !isReady && !reducedMotion;
+                  return (
+                    <span
+                      key={index}
+                      className={`shell-loader__seg${isOn ? ' is-on' : ''}${isWaiting ? ' is-waiting' : ''}`}
+                    >
+                      <span className="shell-loader__fill" />
+                    </span>
+                  );
+                })}
+              </div>
 
-        <p className="shell-loader__caption">{resolvedCaption}</p>
+              <p className="shell-loader__caption">{resolvedCaption}</p>
+            </div>
+          </div>
+
+          {/* The cover: a leaf hinged on the spine, with an outside and an inside. */}
+          <div className="shell-book__leaf" aria-hidden="true">
+            <span className="shell-book__face shell-book__face--out">
+              <span className="shell-book__frame" />
+            </span>
+            <span className="shell-book__face shell-book__face--in">
+              <span className="shell-book__endpaper" />
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );

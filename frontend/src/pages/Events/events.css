@@ -96,7 +96,7 @@
 :where(.evt-page) :where(
   .evt-chip,
   .evt-cell__num,
-  .evt-cell__count,
+  .evt-cell__more,
   .evt-ticket__open,
   .evt-clubrow,
   .evt-view button
@@ -1325,7 +1325,7 @@ button.evt-clubrow[aria-pressed="true"] .evt-clubrow__bar::after { background: v
 :where(.evt-page) :where(
   .evt-chip,
   .evt-cell__num,
-  .evt-cell__count,
+  .evt-cell__more,
   .evt-ticket__open,
   .evt-clubrow
 ):active {
