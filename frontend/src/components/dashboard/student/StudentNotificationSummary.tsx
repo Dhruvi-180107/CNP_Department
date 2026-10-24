@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom';
-import { AlertIcon, ArrowRightIcon, InboxIcon } from './StudentIcons';
+import { Counter, KindGlyph } from '../../ui/vis';
+import { Tooltip } from '../../ui/Tooltip';
+import { CheckIcon } from './StudentIcons';
 import { relativeTime } from './studentUtils';
 import type { StudentNotificationItem } from '../../../types/studentDashboard';
 
@@ -9,98 +11,73 @@ interface StudentNotificationSummaryProps {
   error?: string;
 }
 
+/**
+ * Unread notices as a row of marks rather than a list of headlines: one mark per
+ * recent notice, filled while unread, with the count and the titles on hover.
+ */
 export function StudentNotificationSummary({
   unreadCount,
   notifications,
   error,
 }: StudentNotificationSummaryProps) {
-  const recent = notifications.slice(0, 3);
+  const recent = notifications.slice(0, 6);
+  const tip = notifications
+    .slice(0, 3)
+    .map((item) => {
+      const time = relativeTime(item.createdAt);
+      return `${item.isRead ? '' : 'Unread · '}${item.title}${time ? ` (${time})` : ''}`;
+    })
+    .join(' · ');
+
+  const aria = error
+    ? 'Notices unavailable'
+    : `${unreadCount} unread ${unreadCount === 1 ? 'notice' : 'notices'} of ${notifications.length}${
+        notifications.length ? `. Open the inbox.` : ''
+      }`;
+
+  const body = (
+    <>
+      <span className="sd-signal__glyph" aria-hidden="true">
+        <KindGlyph kind="notification" size={16} />
+      </span>
+      <span className="sd-signal__label">Notices</span>
+
+      <span className="sd-signal__marks" aria-hidden="true">
+        {recent.map((item) => (
+          <span className="sd-signal__mark" data-unread={!item.isRead || undefined} key={item._id} />
+        ))}
+        {notifications.length > recent.length ? (
+          <span className="sd-signal__more">+{notifications.length - recent.length}</span>
+        ) : null}
+      </span>
+
+      <span className="sd-signal__num" aria-hidden="true">
+        {error ? (
+          <span className="sd-signal__unit">unavailable</span>
+        ) : unreadCount > 0 ? (
+          <>
+            <Counter value={unreadCount} />
+            <span className="sd-signal__unit">unread</span>
+          </>
+        ) : (
+          <>
+            <CheckIcon className="sd-signal__check" />
+            <span className="sd-signal__unit">{notifications.length > 0 ? 'all read' : 'none'}</span>
+          </>
+        )}
+      </span>
+    </>
+  );
+
+  if (error) {
+    return <div className="sd-signal__row">{body}</div>;
+  }
 
   return (
-    <section className="ui-panel sd-notes" aria-labelledby="sd-notes-heading">
-      <header className="ui-panel__head">
-        <div className="ui-panel__titles">
-          <h2 className="ui-panel__title" id="sd-notes-heading">
-            Notifications
-          </h2>
-          {unreadCount > 0 ? (
-            <span className="ui-count ui-count--accent" aria-label={`${unreadCount} unread`}>
-              {unreadCount > 99 ? '99+' : unreadCount}
-            </span>
-          ) : (
-            <span className="ui-panel__meta">{error ? 'Unavailable' : 'All read'}</span>
-          )}
-        </div>
-      </header>
-
-      <div className="ui-panel__body ui-panel__body--flush sd-panel__body">
-        {error ? (
-          <div className="sd-panel__state">
-            <p className="ui-notice ui-notice--error sd-error" role="alert">
-              <AlertIcon className="sd-icon sd-icon--sm" />
-              <span>{error}</span>
-            </p>
-          </div>
-        ) : recent.length === 0 ? (
-          <div className="sd-panel__state">
-            <div className="ui-empty sd-empty">
-              <span className="ui-empty__mark">
-                <InboxIcon />
-              </span>
-              <p className="ui-empty__title">Inbox is clear</p>
-              <p className="ui-empty__text">
-                Approvals, mentor feedback and event reminders arrive here.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="ui-rows sd-note-rows">
-            {recent.map((item) => {
-              const unread = !item.isRead;
-              const time = relativeTime(item.createdAt);
-              return (
-                <Link
-                  key={item._id}
-                  className={`ui-row ui-row--link sd-note${unread ? ' is-unread' : ''}`}
-                  to={item.link || '/notifications'}
-                >
-                  <span className="sd-note__mark" aria-hidden="true" />
-                  <span className="ui-row__main">
-                    <span className="ui-row__title">
-                      {unread ? <span className="ui-visually-hidden">Unread: </span> : null}
-                      {item.title}
-                    </span>
-                    {item.message ? (
-                      <span className="ui-row__sub ui-truncate">{item.message}</span>
-                    ) : null}
-                  </span>
-                  {time ? (
-                    <span className="ui-row__meta">
-                      <time className="sd-note__time" dateTime={item.createdAt}>
-                        {time}
-                      </time>
-                    </span>
-                  ) : null}
-                </Link>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <footer className="ui-panel__foot sd-notes__foot">
-        <span className="ui-meta">
-          {error
-            ? 'Inbox unavailable'
-            : notifications.length > 0
-              ? `${notifications.length} recent ${notifications.length === 1 ? 'notice' : 'notices'}`
-              : 'No notices on file'}
-        </span>
-        <Link className="sd-foot-link" to="/notifications">
-          Open inbox
-          <ArrowRightIcon className="sd-icon sd-icon--sm sd-arrow" />
-        </Link>
-      </footer>
-    </section>
+    <Tooltip label={tip || 'No notices'}>
+      <Link className="sd-signal__row" to="/notifications" aria-label={aria}>
+        {body}
+      </Link>
+    </Tooltip>
   );
 }

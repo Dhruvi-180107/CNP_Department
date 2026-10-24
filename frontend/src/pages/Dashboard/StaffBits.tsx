@@ -1,10 +1,12 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { EventForm } from '../../components/events/EventForm';
+import { DateTile } from '../../components/ui/vis';
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Shared pieces for the four staff dashboards. Everything here is a row,
-   a stat, an empty state or a small mark — the role screens own the layout.
+   Shared pieces for the four staff dashboards. The role screens own their
+   composition; this file holds only marks, ages, the event rail and the
+   per-role loading skeleton. No region here explains itself in a sentence.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Marks ───────────────────────────────────────────────────────────────── */
@@ -21,7 +23,8 @@ export type DashIconName =
   | 'external'
   | 'bell'
   | 'check'
-  | 'plus';
+  | 'plus'
+  | 'lead';
 
 const DASH_ICONS: Record<DashIconName, ReactNode> = {
   clubs: (
@@ -94,6 +97,12 @@ const DASH_ICONS: Record<DashIconName, ReactNode> = {
   ),
   check: <path d="M5 12.5l4.5 4.5L19 7" />,
   plus: <path d="M12 5v14M5 12h14" />,
+  lead: (
+    <>
+      <path d="M6.4 3.4v17.2" />
+      <path d="M6.4 4.6h11.2l-2.6 3.6 2.6 3.6H6.4" />
+    </>
+  ),
 };
 
 export function DashIcon({ name, size = 16 }: { name: DashIconName; size?: number }) {
@@ -117,6 +126,38 @@ export function DashIcon({ name, size = 16 }: { name: DashIconName; size?: numbe
 
 /* ── People ──────────────────────────────────────────────────────────────── */
 
+/**
+ * An organisation's plate: the same cut-corner, hairline and letterform the club
+ * crest and the project plate use, so a club looks like a club on every page.
+ * People keep the round `ui-avatar`; this is only for clubs and projects.
+ */
+export function DashPlate({
+  name,
+  src,
+  size = 40,
+}: {
+  name?: string | null;
+  src?: string | null;
+  size?: number;
+}) {
+  const cleaned = (name || '')
+    .replace(/\b(club|society|committee|association|collective|group|cell)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const words = (cleaned || (name || '').trim()).split(/\s+/).filter(Boolean);
+  const mono = words.length === 0
+    ? '?'
+    : words.length === 1
+      ? words[0].slice(0, 2).toUpperCase()
+      : (words[0].charAt(0) + words[1].charAt(0)).toUpperCase();
+
+  return (
+    <span className="dash-plate" style={{ '--dash-plate': `${size}px` } as CSSProperties} aria-hidden="true">
+      {src ? <img src={src} alt="" /> : <span className="dash-plate__mono">{mono}</span>}
+    </span>
+  );
+}
+
 export function DashAvatar({
   name,
   src,
@@ -124,36 +165,17 @@ export function DashAvatar({
 }: {
   name?: string | null;
   src?: string | null;
-  size?: 'sm' | 'md';
+  size?: 'sm' | 'md' | 'lg';
 }) {
   const trimmed = (name || '').trim();
   const withoutTitle = trimmed.replace(/^(dr|prof|mr|mrs|ms)\.?\s+/i, '');
   const initial = (withoutTitle || trimmed || '?').charAt(0).toUpperCase() || '?';
   return (
-    <span className={`ui-avatar${size === 'sm' ? ' ui-avatar--sm' : ''}`} aria-hidden="true">
+    <span
+      className={`ui-avatar${size === 'sm' ? ' ui-avatar--sm' : size === 'lg' ? ' ui-avatar--lg' : ''}`}
+      aria-hidden="true"
+    >
       {src ? <img src={src} alt="" /> : initial}
-    </span>
-  );
-}
-
-export function DashPerson({
-  name,
-  sub,
-  src,
-  size = 'sm',
-}: {
-  name?: string | null;
-  sub?: string | null;
-  src?: string | null;
-  size?: 'sm' | 'md';
-}) {
-  return (
-    <span className="ui-person">
-      <DashAvatar name={name} src={src} size={size} />
-      <span className="ui-person__text">
-        <span className="ui-person__name">{name || 'Unassigned'}</span>
-        {sub ? <span className="ui-person__sub">{sub}</span> : null}
-      </span>
     </span>
   );
 }
@@ -167,29 +189,6 @@ export function DashNotifications({ count }: { count: number }) {
       Notifications
       {count > 0 ? <span className="ui-count ui-count--accent">{count}</span> : null}
     </Link>
-  );
-}
-
-/* ── Stats ───────────────────────────────────────────────────────────────── */
-
-export function DashStat({
-  value,
-  label,
-  tone,
-}: {
-  value: ReactNode;
-  label: string;
-  tone?: 'accent' | 'warn';
-}) {
-  return (
-    <div
-      className={`ui-stat${tone === 'accent' ? ' ui-stat--accent' : ''}${
-        tone === 'warn' ? ' dash-stat--warn' : ''
-      }`}
-    >
-      <p className="ui-stat__value">{value}</p>
-      <p className="ui-stat__label">{label}</p>
-    </div>
   );
 }
 
@@ -214,6 +213,33 @@ export function DashEmpty({
       <p className="ui-empty__title">{title}</p>
       {text ? <p className="ui-empty__text">{text}</p> : null}
       {action}
+    </div>
+  );
+}
+
+/* ── Quiet empty (inside a panel, so it adds no second border) ───────────── */
+
+export function DashQuiet({
+  icon,
+  title,
+  text,
+  action,
+}: {
+  icon: DashIconName;
+  title: string;
+  text?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="dash-quiet">
+      <span className="dash-quiet__mark" aria-hidden="true">
+        <DashIcon name={icon} size={15} />
+      </span>
+      <div className="dash-quiet__text">
+        <p className="dash-quiet__title">{title}</p>
+        {text ? <p className="dash-quiet__line">{text}</p> : null}
+      </div>
+      {action ? <span className="dash-quiet__action">{action}</span> : null}
     </div>
   );
 }
@@ -256,55 +282,89 @@ export function fmtShortDay(value: string | Date | null | undefined): string {
   return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }
 
-/* ── Events panel ────────────────────────────────────────────────────────── */
+/** Age in days, floored at 0. `null` when the date is missing or invalid. */
+export function ageInDays(value: string | Date | null | undefined): number | null {
+  const date = parseDate(value);
+  if (!date) return null;
+  const ms = Date.now() - date.getTime();
+  return Math.max(0, Math.floor(ms / 86_400_000));
+}
 
-function EventRow({
+/** "3h" / "2d" — a mark, not a sentence. */
+export function shortAge(value: string | Date | null | undefined): string {
+  const date = parseDate(value);
+  if (!date) return '—';
+  const hours = Math.max(0, (Date.now() - date.getTime()) / 3_600_000);
+  if (hours < 1) return 'now';
+  if (hours < 24) return `${Math.floor(hours)}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+/** The sentence form, for the accessible name and the tooltip only. */
+export function spokenAge(value: string | Date | null | undefined): string {
+  const date = parseDate(value);
+  if (!date) return 'Date unknown';
+  const hours = Math.max(0, (Date.now() - date.getTime()) / 3_600_000);
+  if (hours < 1) return 'Less than an hour ago';
+  if (hours < 24) return `${Math.floor(hours)} ${Math.floor(hours) === 1 ? 'hour' : 'hours'} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+}
+
+/* ── Entrance choreography ───────────────────────────────────────────────── */
+
+/**
+ * The screen's only mount animation: regions rise 6px and fade over 260ms on a
+ * 40ms stagger, capped at eight. Lists inside a region do not animate per row.
+ */
+export function riseStyle(index: number): CSSProperties {
+  return { '--dash-i': Math.min(index, 8) } as CSSProperties;
+}
+
+/* ── Event rail ──────────────────────────────────────────────────────────── */
+
+function EventSlip({
   event,
   past,
+  first,
   onEdit,
   onDelete,
 }: {
   event: any;
   past: boolean;
+  first: boolean;
   onEdit: (event: any) => void;
   onDelete: (id: string) => void;
 }) {
-  const date = parseDate(event.eventDate || event.date);
-  const fullDate = fmtDay(event.eventDate || event.date);
+  const raw = event.eventDate || event.date;
+  const date = parseDate(raw);
+  const fullDate = fmtDay(raw);
   const club = event.clubId && typeof event.clubId === 'object' ? event.clubId : null;
   const time = date
     ? date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
     : '';
 
   return (
-    <li className="ui-row dash-event">
-      <time
-        className={`dash-date${past ? ' dash-date--past' : ''}`}
-        dateTime={date ? date.toISOString() : undefined}
-        aria-hidden="true"
-      >
-        <span className="dash-date__day">{date ? date.getDate() : '—'}</span>
-        <span className="dash-date__month">
-          {date ? date.toLocaleDateString(undefined, { month: 'short' }) : ''}
-        </span>
-      </time>
+    <li className={`ui-row dash-ev${past ? ' is-past' : ''}`}>
+      <DateTile date={raw || new Date()} size="sm" tone={first && !past ? 'accent' : 'plain'} />
 
-      <div className="ui-row__main">
-        <p className="ui-row__title">
-          <span className="ui-visually-hidden">{past ? 'Past event, ' : ''}{fullDate}. </span>
-          {event.title || 'Untitled event'}
-        </p>
-        <p className="ui-row__sub">
+      <div className="dash-ev__main">
+        <p className="dash-ev__title">{event.title || 'Untitled event'}</p>
+        <p className="dash-ev__meta">
+          <span className="ui-visually-hidden">{fullDate}. </span>
           {club?.name || 'Department club'}
-          {event.location ? ` · ${event.location}` : ''}
+          {event.location ? (
+            <>
+              <span className="dash-ev__dot" aria-hidden="true" />
+              {event.location}
+            </>
+          ) : null}
         </p>
       </div>
 
-      <div className="ui-row__meta">
-        {time ? <span className="dash-time">{time}</span> : null}
-      </div>
+      {time ? <span className="dash-ev__time">{time}</span> : null}
 
-      <div className="ui-row__actions">
+      <div className="ui-row__actions dash-ev__actions">
         {event.eventLink ? (
           <a
             className="ui-icon-btn"
@@ -384,15 +444,15 @@ export function DashEventsPanel({
   const hidden = list.length - shown.length;
 
   return (
-    <section className="ui-panel" aria-labelledby={`${idPrefix}-title`}>
+    <section className="ui-panel dash-events" aria-labelledby={`${idPrefix}-title`}>
       <header className="ui-panel__head">
         <div className="ui-panel__titles">
           <h2 className="ui-panel__title" id={`${idPrefix}-title`}>
             {showForm ? (editing ? 'Edit event' : 'New event') : 'Events'}
           </h2>
           {showForm ? null : (
-            <span className="ui-panel__meta dash-events-meta">
-              {upcoming.length} upcoming · {past.length} past
+            <span className="ui-panel__meta">
+              {upcoming.length + past.length}
             </span>
           )}
         </div>
@@ -459,12 +519,13 @@ export function DashEventsPanel({
             className="ui-panel__body ui-panel__body--flush"
           >
             {shown.length ? (
-              <ul className="ui-rows">
-                {shown.map((event) => (
-                  <EventRow
+              <ul className="dash-ev-rail">
+                {shown.map((event, index) => (
+                  <EventSlip
                     key={event._id}
                     event={event}
                     past={tab === 'past'}
+                    first={index === 0}
                     onEdit={onEdit}
                     onDelete={onDelete}
                   />
@@ -472,7 +533,7 @@ export function DashEventsPanel({
               </ul>
             ) : (
               <div className="ui-panel__body">
-                <DashEmpty
+                <DashQuiet
                   icon="calendar"
                   title={tab === 'upcoming' ? 'No upcoming events' : 'No past events'}
                   text={
@@ -506,5 +567,95 @@ export function DashEventsPanel({
         </>
       )}
     </section>
+  );
+}
+
+/* ── Loading skeleton ────────────────────────────────────────────────────── */
+
+function Skel({ className }: { className: string }) {
+  return <span className={`ui-skel dash-skel ${className}`} />;
+}
+
+/**
+ * The loading state is shaped like the screen it becomes: each role's own
+ * composition, not a full-screen loader. The shell's route rail covers the
+ * global "a route is loading" affordance.
+ */
+export function DashSkeleton({ role }: { role?: string }) {
+  return (
+    <div className={`dash dash--loading dash--${role ?? 'staff'}`} aria-busy="true">
+      <div className="ui-page-head">
+        <div className="ui-page-head__text dash-skel-head">
+          <Skel className="dash-skel--title" />
+          <Skel className="dash-skel--sub" />
+        </div>
+        <div className="dash-head-actions">
+          <Skel className="dash-skel--key" />
+          <Skel className="dash-skel--key" />
+        </div>
+      </div>
+
+      {role === 'faculty_coordinator' ? (
+        <>
+          <div className="dash-tiles">
+            <Skel className="dash-skel--tile" />
+            <Skel className="dash-skel--tile" />
+          </div>
+          <div className="dash-split">
+            <Skel className="dash-skel--panel" />
+            <Skel className="dash-skel--panel-sm" />
+          </div>
+          <Skel className="dash-skel--rail" />
+        </>
+      ) : null}
+
+      {role === 'club_admin' ? (
+        <>
+          <Skel className="dash-skel--band" />
+          <div className="dash-map">
+            <Skel className="dash-skel--tile" />
+            <Skel className="dash-skel--tile" />
+            <Skel className="dash-skel--tile" />
+          </div>
+          <Skel className="dash-skel--rail" />
+        </>
+      ) : null}
+
+      {role === 'faculty_mentor' ? (
+        <>
+          <div className="dash-const">
+            <Skel className="dash-skel--node" />
+            <Skel className="dash-skel--node" />
+          </div>
+          <Skel className="dash-skel--band" />
+        </>
+      ) : null}
+
+      {role === 'project_admin' ? (
+        <>
+          <div className="dash-console">
+            <Skel className="dash-skel--cell" />
+            <Skel className="dash-skel--cell" />
+            <Skel className="dash-skel--cell" />
+            <Skel className="dash-skel--cell" />
+          </div>
+          <div className="dash-split">
+            <Skel className="dash-skel--panel" />
+            <Skel className="dash-skel--panel-sm" />
+          </div>
+          <div className="dash-caps">
+            <Skel className="dash-skel--cap" />
+            <Skel className="dash-skel--cap" />
+            <Skel className="dash-skel--cap" />
+            <Skel className="dash-skel--cap" />
+            <Skel className="dash-skel--cap" />
+          </div>
+        </>
+      ) : null}
+
+      <p className="ui-visually-hidden" role="status">
+        Loading dashboard
+      </p>
+    </div>
   );
 }

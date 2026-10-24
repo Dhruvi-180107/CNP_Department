@@ -401,22 +401,47 @@
   color: var(--color-muted);
 }
 
+/* Five roles as a rail: a glyph and a word each, the duty on hover. */
 .landing-roles {
   justify-self: end;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--rule-hair);
   width: 100%;
-  max-width: 320px;
+  max-width: 560px;
+  background: var(--color-rule);
+  border: var(--rule-hair) solid var(--color-rule);
 }
 
 .landing-roles li {
-  padding: var(--space-xs) 0;
-  border-bottom: var(--rule-hair) solid var(--color-rule);
-  font: 500 var(--text-sm)/1.3 var(--font-display);
+  display: grid;
+  gap: var(--space-xs);
+  align-content: start;
+  min-width: 0;
+  padding: var(--space-sm) var(--space-xs);
+  background: var(--color-paper);
+  color: var(--color-muted);
+  transition: color var(--dur-short) var(--ease-in-out), background-color var(--dur-short) var(--ease-in-out);
+}
+
+.landing-roles li:hover {
+  background: var(--color-sheet);
+  color: var(--color-accent-deep);
+}
+
+.landing-roles svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+}
+
+.landing-roles__label {
+  font: 500 var(--text-xs)/1.25 var(--font-display);
   color: var(--color-ink-2);
+  transition: color var(--dur-short) var(--ease-in-out);
 }
-.landing-roles li:first-child {
-  padding-top: 0;
-  border-top: var(--rule-hair) solid var(--color-rule);
-}
+
+.landing-roles li:hover .landing-roles__label { color: var(--color-ink); }
 
 /* ── Student Managed Clubs · split ───────────────────────────────────────── */
 
@@ -834,7 +859,7 @@
   .landing-about { padding-block: var(--space-2xl); }
   .landing-statement { max-width: none; }
   .landing-about-foot { grid-template-columns: minmax(0, 1fr); gap: var(--space-lg); }
-  .landing-roles { justify-self: start; max-width: 420px; }
+  .landing-roles { justify-self: start; max-width: none; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   .landing-clubs { padding-block: var(--space-2xl); }
   .landing-clubs-grid { grid-template-columns: minmax(0, 1fr); gap: var(--space-xl); }

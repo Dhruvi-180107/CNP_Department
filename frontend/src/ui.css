@@ -788,3 +788,80 @@ legend.ui-label {
 .ui-btn--ghost:any-link { color: var(--color-ink); }
 .ui-btn--danger:any-link { color: var(--color-negative); }
 .ui-btn--danger:hover:not(:disabled):any-link { color: var(--color-accent-ink); }
+
+/* ── Route rail ──────────────────────────────────────────────────────────────
+   In-app navigation is a route swap, not a page load. This is the only global
+   affordance: 2px of cobalt across the top of the viewport, trickling while the
+   destination fetches, then closing and fading. No overlay, no remount. */
+
+.route-rail {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: calc(var(--z-toast) + 10);
+  height: 2px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-short) var(--ease-in-out);
+}
+
+.route-rail.is-live { opacity: 1; }
+
+.route-rail__fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--color-accent);
+  box-shadow: 0 0 8px var(--color-accent-glow);
+  transition: width var(--dur-slow) var(--ease-out);
+}
+
+.route-rail.is-live .route-rail__fill { width: 72%; }
+.route-rail.is-done .route-rail__fill { width: 100%; transition-duration: 160ms; }
+.route-rail:not(.is-live) .route-rail__fill { width: 0; transition-duration: 0ms; }
+
+/* ── Route entrance ──────────────────────────────────────────────────────────
+   Applied by the shell to the keyed outlet wrapper: a 4px rise and a fade on
+   mount. The rail, header and page head do not animate; only content does. */
+
+.route-enter {
+  animation: route-enter var(--dur-short) var(--ease-out) both;
+}
+
+@keyframes route-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ── Tooltip surface (the chrome layer positions it; this is the plate) ─────── */
+
+.ui-tip {
+  position: fixed;
+  z-index: var(--z-tooltip);
+  max-width: 15rem;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--color-graphite);
+  color: var(--color-graphite-ink);
+  font: 400 var(--text-xs)/1.45 var(--font-body);
+  text-wrap: pretty;
+  box-shadow: var(--shadow-lift);
+  pointer-events: none;
+  animation: ui-tip-in var(--dur-micro) var(--ease-out) both;
+}
+
+.ui-tip--below { animation-name: ui-tip-in-below; }
+
+@keyframes ui-tip-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ui-tip-in-below {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-rail__fill { transition-duration: 0ms !important; }
+  .route-enter { animation: none !important; }
+  .ui-tip { animation: none !important; }
+}

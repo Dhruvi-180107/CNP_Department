@@ -1,5 +1,6 @@
 /* Shared marks for the student dashboard. Inline SVG on a 24 grid, stroked with
-   the current ink so they inherit hover and disabled states. */
+   the current ink so they inherit hover and disabled states. Entity glyphs come
+   from `components/ui/vis` (KindGlyph); these are the utility marks. */
 import type { SVGProps } from 'react';
 
 type IconProps = SVGProps<SVGSVGElement>;
@@ -20,15 +21,6 @@ function Icon({ children, ...rest }: IconProps) {
     >
       {children}
     </svg>
-  );
-}
-
-export function BellIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" />
-      <path d="M10 21h4" />
-    </Icon>
   );
 }
 
@@ -76,38 +68,66 @@ export function PinIcon(props: IconProps) {
   );
 }
 
-export function ClubIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M3 10 12 4l9 6M5 10v8m4-8v8m6-8v8m4-8v8M3 20h18" />
-    </Icon>
-  );
-}
-
-export function ProjectIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1Z" />
-      <path d="M6 6h12a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Z" />
-      <path d="M9 12h6m-6 4h4" />
-    </Icon>
-  );
-}
-
-export function InboxIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M4 13h4l1.5 3h5L16 13h4" />
-      <path d="M4 13 6.2 5.7A2 2 0 0 1 8.1 4h7.8a2 2 0 0 1 1.9 1.7L20 13v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-4Z" />
-    </Icon>
-  );
-}
-
 export function AlertIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M10.3 4.3 3.5 16a2 2 0 0 0 1.7 3h13.6a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z" />
       <path d="M12 9.5v4m0 3h.01" />
+    </Icon>
+  );
+}
+
+/** Team lead: the crown, the same mark the project board uses. */
+export function LeadIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5.2 16.6 4 6.6l4.8 3.6L12 5.2l3.2 5 4.8-3.6-1.2 10Z" />
+      <path d="M5.2 19.4h13.6" />
+    </Icon>
+  );
+}
+
+/** A request still waiting: an open ring, the only mark that is not a solid. */
+export function PendingIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="8.4" strokeDasharray="3 2.6" />
+      <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" />
+    </Icon>
+  );
+}
+
+/** The faculty mentor: one star, legible at 14px. */
+export function MentorIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 4.2 14.3 9l5.3.8-3.8 3.7.9 5.3L12 16.3l-4.7 2.5.9-5.3L4.4 9.8 9.7 9Z" />
+    </Icon>
+  );
+}
+
+export function CheckIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m4.6 12.6 4.6 4.4 10-10.4" />
+    </Icon>
+  );
+}
+
+/** Core team: a solid plinth. Member: a hollow one. Neither carries meaning by
+    colour alone — the role word sits beside it. */
+export function CoreMark(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 4.4 19 8.6 12 12.8 5 8.6Z" />
+    </Icon>
+  );
+}
+
+export function MemberMark(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="3.4" />
     </Icon>
   );
 }

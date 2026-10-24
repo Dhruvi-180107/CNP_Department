@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { Counter } from '../ui/vis';
 
 interface ProjectUpdatesProps {
   projectId: string;
@@ -218,7 +220,9 @@ export function ProjectUpdates({ projectId, projectName: propProjectName, isTL, 
           <h2 className="ui-panel__title" id="prj-updates-title">
             Updates
           </h2>
-          <span className="ui-panel__meta">{updates.length}</span>
+          <span className="ui-panel__meta">
+            <Counter value={updates.length} />
+          </span>
         </div>
         {isTL && (
           <button
@@ -297,7 +301,12 @@ export function ProjectUpdates({ projectId, projectName: propProjectName, isTL, 
               const isFormOpen = activeFeedbackUpdateId === upd._id;
 
               return (
-                <li key={upd._id} id={`update-${upd._id}`} className="prj-timeline__item">
+                <li
+                  key={upd._id}
+                  id={`update-${upd._id}`}
+                  className={`prj-timeline__item${index === 0 ? ' is-latest' : ''}`}
+                  style={{ '--i': Math.min(7, index) } as CSSProperties}
+                >
                   <span
                     className={`prj-timeline__node${index === 0 ? ' is-latest' : ''}`}
                     aria-hidden="true"
@@ -349,6 +358,7 @@ export function ProjectUpdates({ projectId, projectName: propProjectName, isTL, 
                       </div>
                     )}
 
+                    {(hasFeedback || canGiveFeedback) && (
                     <div className="prj-feedback">
                       <div className="prj-feedback__head">
                         <span className="prj-feedback__label">
@@ -400,10 +410,6 @@ export function ProjectUpdates({ projectId, projectName: propProjectName, isTL, 
                             );
                           })}
                         </ul>
-                      )}
-
-                      {!hasFeedback && !isFormOpen && (
-                        <p className="prj-feedback__empty">No mentor feedback on this update yet.</p>
                       )}
 
                       {isFormOpen && (
@@ -479,6 +485,7 @@ export function ProjectUpdates({ projectId, projectName: propProjectName, isTL, 
                         </form>
                       )}
                     </div>
+                    )}
                   </div>
                 </li>
               );
@@ -492,8 +499,8 @@ export function ProjectUpdates({ projectId, projectName: propProjectName, isTL, 
             <p className="ui-empty__title">No updates yet</p>
             <p className="ui-empty__text">
               {isTL
-                ? 'Post the first update so mentors and admins can follow the work.'
-                : 'The team leader posts progress here, and mentors reply with feedback.'}
+                ? 'Post the first update so mentors can follow the work.'
+                : 'The team leader posts progress here.'}
             </p>
             {isTL && !showUpdateForm && (
               <button

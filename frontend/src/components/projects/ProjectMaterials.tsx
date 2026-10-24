@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { api } from '../../services/api';
+import { Counter, KindGlyph } from '../ui/vis';
 
 interface ProjectMaterialItem {
   _id: string;
@@ -37,6 +38,13 @@ interface ProjectMaterialItem {
 interface ProjectMaterialsProps {
   projectId: string;
   isTL?: boolean;
+  /** Lifts the composition to the page so the aside can carry one coverage ring. */
+  onSummaryChange?: (summary: {
+    total: number;
+    guitar: number;
+    purchased: number;
+    owned: number;
+  }) => void;
 }
 
 const SOURCE_LABEL: Record<ProjectMaterialItem['source'], string> = {
@@ -59,7 +67,26 @@ const BoxMark = () => (
   </svg>
 );
 
-export function ProjectMaterials({ projectId, isTL = false }: ProjectMaterialsProps) {
+/* One mark per source, so the table's source column reads at a glance. */
+function SourceMark({ source }: { source: ProjectMaterialItem['source'] }) {
+  if (source === 'guitar') return <KindGlyph kind="inventory" size={14} />;
+  if (source === 'owned') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M4.6 12.4 9.4 17.2 19.4 6.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M3.6 5.4h2.1l2.2 9.4h10.4l2-6.9H6.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="10" cy="18.8" r="1.1" fill="currentColor" />
+      <circle cx="16.9" cy="18.8" r="1.1" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function ProjectMaterials({ projectId, isTL = false, onSummaryChange }: ProjectMaterialsProps) {
   const [materials, setMaterials] = useState<ProjectMaterialItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -199,6 +226,15 @@ export function ProjectMaterials({ projectId, isTL = false }: ProjectMaterialsPr
   const selfPurchasedCount = materials.filter((m) => m.source === 'self_purchased').length;
   const ownedCount = materials.filter((m) => m.source === 'owned').length;
 
+  useEffect(() => {
+    onSummaryChange?.({
+      total: materials.length,
+      guitar: guitarCount,
+      purchased: selfPurchasedCount,
+      owned: ownedCount,
+    });
+  }, [materials, guitarCount, selfPurchasedCount, ownedCount, onSummaryChange]);
+
   const filteredMaterials = materials.filter((m) => {
     if (activeFilter === 'all') return true;
     return m.source === activeFilter;
@@ -231,7 +267,9 @@ export function ProjectMaterials({ projectId, isTL = false }: ProjectMaterialsPr
           <h2 className="ui-panel__title" id="prj-materials-title">
             Materials
           </h2>
-          <span className="ui-panel__meta">{materials.length} items</span>
+          <span className="ui-panel__meta">
+            <Counter value={materials.length} /> items
+          </span>
         </div>
         {isTL && (
           <button
@@ -246,7 +284,11 @@ export function ProjectMaterials({ projectId, isTL = false }: ProjectMaterialsPr
       </header>
 
       <div className="ui-panel__body prj-materials__summary">
-        <div className="prj-coverage" aria-hidden="true">
+        <div
+          className="prj-coverage"
+          role="img"
+          aria-label={`${guitarCount} from central inventory, ${selfPurchasedCount} team bought, ${ownedCount} already owned`}
+        >
           {materials.length ? (
             <>
               {guitarCount > 0 && <span className="prj-coverage__part is-guitar" style={{ flexGrow: guitarCount }} />}
@@ -334,7 +376,12 @@ export function ProjectMaterials({ projectId, isTL = false }: ProjectMaterialsPr
                         </div>
                       </td>
                       <td>
-                        <span className="ui-tag ui-tag--plain">{SOURCE_LABEL[mat.source]}</span>
+                        <span className={`prj-src is-${mat.source}`}>
+                          <span className="prj-src__mark" aria-hidden="true">
+                            <SourceMark source={mat.source} />
+                          </span>
+                          {SOURCE_LABEL[mat.source]}
+                        </span>
                       </td>
                       <td className="is-num">{mat.quantity}</td>
                       <td>
@@ -382,9 +429,7 @@ export function ProjectMaterials({ projectId, isTL = false }: ProjectMaterialsPr
                 : `No ${SOURCE_LABEL[activeFilter as ProjectMaterialItem['source']].toLowerCase()} materials`}
             </p>
             <p className="ui-empty__text">
-              {isTL
-                ? 'Add what the team bought or already owns, or request components from central inventory below.'
-                : 'Materials allocated or added to this project appear here.'}
+              {isTL ? 'Add what the team bought or already owns.' : 'Materials added to this project appear here.'}
             </p>
             {isTL && (
               <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={openModal}>
@@ -409,7 +454,6 @@ export function ProjectMaterials({ projectId, isTL = false }: ProjectMaterialsPr
                 <h2 className="ui-h2" id={`${fieldId}-title`}>
                   Add material
                 </h2>
-                <p className="ui-sub">Record what the team bought or already had.</p>
               </div>
               <button
                 type="button"
@@ -469,9 +513,7 @@ export function ProjectMaterials({ projectId, isTL = false }: ProjectMaterialsPr
                       </span>
                     </label>
                   </div>
-                  <p className="ui-hint">
-                    Components from central inventory come through a material request, not here.
-                  </p>
+                  <p className="ui-hint">Central inventory comes through a material request.</p>
                 </fieldset>
 
                 <div className="ui-form-row ui-form-row--2">

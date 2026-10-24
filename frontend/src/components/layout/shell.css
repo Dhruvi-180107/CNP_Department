@@ -154,11 +154,15 @@
   background: var(--color-graphite-2);
 }
 
+/* Section labels are the rail's quiet meta layer. They carry the full
+   graphite-muted ink (≈6.9:1 on the graphite rail) so they are readable, and
+   earn their lower rank from size and face instead of opacity — a dimmed 12px
+   label was the least legible thing in the frame. */
 .rail-group__label {
-  padding: var(--space-2xs) var(--space-md);
-  font: 500 var(--text-xs)/1.4 var(--font-body);
+  padding: var(--space-sm) var(--space-md) var(--space-2xs);
+  font: 600 var(--text-xs)/1.3 var(--font-body);
+  letter-spacing: normal;
   color: var(--color-graphite-muted);
-  opacity: 0.82;
 }
 
 .rail-list { display: grid; gap: var(--space-3xs); }
@@ -183,7 +187,7 @@
   top: 0;
   bottom: 0;
   width: 2px;
-  background: var(--color-accent);
+  background: var(--color-accent-2);
   transform: scaleY(0);
   transform-origin: center;
   transition: transform var(--dur-short) var(--ease-out);
@@ -191,16 +195,22 @@
 
 .rail-link:hover {
   color: var(--color-graphite-ink);
-  background: color-mix(in oklab, var(--color-accent) 9%, transparent);
+  background: color-mix(in oklab, var(--color-accent) 10%, transparent);
 }
 
+/* Active is one state: a cobalt wash, a lit leading edge, cobalt ink on the
+   glyph and the brightest text in the rail. Nothing here is decorative. */
 .rail-link.is-active {
   color: var(--color-graphite-ink);
-  background: color-mix(in oklab, var(--color-accent) 24%, transparent);
+  background: color-mix(in oklab, var(--color-accent) 26%, transparent);
+}
+
+.rail-link.is-active:hover {
+  background: color-mix(in oklab, var(--color-accent) 30%, transparent);
 }
 
 .rail-link:active {
-  background: color-mix(in oklab, var(--color-accent) 30%, transparent);
+  background: color-mix(in oklab, var(--color-accent) 34%, transparent);
 }
 
 .rail-link.is-active::before { transform: scaleY(1); }
@@ -212,10 +222,14 @@
   white-space: nowrap;
 }
 
+/* A 18px optical square with the drawing centred inside it: every glyph sits on
+   the same axis whether it is a wide building or a tall bell. */
 .rail-icon {
+  display: block;
   width: 18px;
   height: 18px;
   flex: none;
+  overflow: visible;
   color: currentColor;
   transition: color var(--dur-short) var(--ease-in-out);
 }
@@ -227,7 +241,7 @@
   flex: none;
   display: grid;
   gap: var(--space-xs);
-  padding: var(--space-sm) var(--space-sm) var(--space-md);
+  padding: var(--space-sm) var(--space-md) var(--space-md);
   border-top: var(--rule-hair) solid var(--color-graphite-2);
 }
 
@@ -236,7 +250,6 @@
   align-items: center;
   gap: var(--space-xs);
   min-width: 0;
-  padding-inline: var(--space-2xs);
 }
 
 .rail-avatar {
@@ -278,16 +291,20 @@
   white-space: nowrap;
 }
 
+/* Sign out is a quiet action, not a destination: no icon gutter of its own, no
+   active bar, no nav weight. It sits on the same 16px axis as the icons above
+   and only gains a surface while the pointer or focus is on it. */
 .rail-signout {
   display: flex;
   background: transparent;
   align-items: center;
   gap: var(--space-xs);
-  width: 100%;
-  min-height: 34px;
+  width: auto;
+  min-height: 30px;
+  margin-inline: calc(var(--space-xs) * -1);
   padding-inline: var(--space-xs);
-  border: var(--rule-hair) solid transparent;
-  border-radius: var(--radius-input);
+  border: 0;
+  border-radius: 4px;
   font: 500 var(--text-xs)/1 var(--font-body);
   color: var(--color-graphite-muted);
   text-align: left;
@@ -295,11 +312,14 @@
 }
 .rail-signout:hover {
   color: var(--color-graphite-ink);
-  background: var(--color-graphite-2);
-  border-color: var(--color-graphite-2);
+  background: color-mix(in oklab, var(--color-graphite-ink) 9%, transparent);
+  border-color: transparent;
 }
-.rail-signout:active { background: var(--color-graphite-ink); color: var(--color-graphite); }
-.rail-signout svg { width: 16px; height: 16px; flex: none; }
+.rail-signout:active {
+  background: color-mix(in oklab, var(--color-graphite-ink) 15%, transparent);
+  color: var(--color-graphite-ink);
+}
+.rail-signout svg { width: 15px; height: 15px; flex: none; opacity: 0.9; }
 
 /* ── Main column ─────────────────────────────────────────────────────────── */
 
@@ -315,14 +335,24 @@
 .shell-header {
   position: relative;
   z-index: var(--z-sticky);
-  display: flex;
   flex: none;
-  align-items: center;
-  gap: var(--space-md);
   min-height: var(--head-h);
-  padding-inline: max(var(--shell-pad), calc((100% - var(--ui-max)) / 2 + var(--shell-pad)));
   background: var(--color-paper);
   border-bottom: var(--rule-hair) solid var(--color-rule);
+}
+
+/* The same column as `.shell-content`: identical max-width, centring and
+   gutter, so the route locator, the header controls and the page's h1 all
+   start and end on one grid at every width. */
+.shell-header__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  width: 100%;
+  max-width: var(--ui-max);
+  min-height: var(--head-h);
+  margin-inline: auto;
+  padding-inline: var(--shell-pad);
 }
 
 .shell-content {
@@ -407,24 +437,76 @@
 
 .hdr-slot { position: relative; display: flex; }
 
-.hdr-jump-btn {
+/* The command-palette trigger wears the app's field: 40px, hairline, sheet —
+   the quietest control that still reads as "you can type here", with the
+   modifier hint parked on the right edge. */
+.hdr-search {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
-  min-height: 34px;
+  width: 216px;
+  min-height: 40px;
   padding: 0 var(--space-2xs) 0 var(--space-sm);
   border: var(--rule-hair) solid var(--color-rule-2);
   border-radius: var(--radius-input);
   background: var(--color-sheet);
   color: var(--color-muted);
   font: 400 var(--text-sm)/1 var(--font-body);
-  transition: border-color var(--dur-short) var(--ease-in-out), color var(--dur-short) var(--ease-in-out), background-color var(--dur-short) var(--ease-in-out);
+  text-align: left;
+  transition:
+    border-color var(--dur-short) var(--ease-in-out),
+    color var(--dur-short) var(--ease-in-out),
+    background-color var(--dur-short) var(--ease-in-out);
 }
-.hdr-jump-btn:hover { border-color: var(--color-muted); color: var(--color-ink-2); }
-.hdr-jump-btn:active { background: var(--color-paper-2); }
-.hdr-jump-btn[aria-expanded="true"] { border-color: var(--color-accent); color: var(--color-ink); }
-.hdr-jump-btn svg { width: 15px; height: 15px; flex: none; }
-.hdr-jump-btn .ui-kbd { margin-left: var(--space-2xs); }
+.hdr-search:hover { border-color: var(--color-muted); color: var(--color-ink-2); }
+.hdr-search:active { background: var(--color-paper-2); }
+.hdr-search[aria-expanded="true"] {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-wash);
+  color: var(--color-ink);
+}
+.hdr-search:focus-visible {
+  border-color: var(--color-accent);
+  color: var(--color-ink);
+}
+.hdr-search > svg { width: 15px; height: 15px; flex: none; }
+.hdr-search__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Aligned to the field's right edge, the way `.ui-kbd` sits inside a hint. */
+.hdr-search__kbd {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3xs);
+  margin-left: auto;
+}
+
+/* The shortcuts trigger is a keycap, so it says what it opens without a label. */
+.ui-icon-btn.hdr-keys { color: var(--color-muted); }
+.ui-icon-btn.hdr-keys:hover { color: var(--color-ink); }
+.ui-icon-btn.hdr-keys[aria-expanded="true"] { color: var(--color-ink); background: var(--color-paper-2); }
+
+.hdr-keys__cap {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: var(--rule-hair) solid var(--color-rule-2);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--color-paper-2);
+  color: var(--color-ink-2);
+  font: 600 0.6875rem/1 var(--font-body);
+}
+
+/* Header controls sit outside `.shell-content`, so they carry the ring. */
+.shell-header :is(button, a):focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.hdr-search:focus-visible { outline-offset: 3px; }
+
+.hdr-menu__kbd { margin-left: auto; }
 
 .ui-menu.hdr-jump {
   position: absolute;
@@ -436,6 +518,37 @@
 }
 
 .hdr-jump__field .ui-field { min-height: 34px; }
+
+.hdr-jump__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-2xs) var(--space-xs) var(--space-xs);
+  font: 500 var(--text-xs)/1.3 var(--font-body);
+  color: var(--color-muted);
+}
+
+.hdr-jump__hint { display: inline-flex; align-items: center; gap: var(--space-3xs); }
+
+.hdr-jump__more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  width: 100%;
+  margin-top: var(--space-2xs);
+  padding: var(--space-sm) var(--space-xs) var(--space-2xs);
+  border: 0;
+  border-top: var(--rule-hair) solid var(--color-rule);
+  background: transparent;
+  font: 500 var(--text-xs)/1.4 var(--font-body);
+  color: var(--color-accent-deep);
+  text-align: left;
+  white-space: nowrap;
+  transition: color var(--dur-short) var(--ease-in-out);
+}
+.hdr-jump__more:hover { color: var(--color-accent); }
 
 .hdr-jump__list {
   display: grid;
@@ -767,14 +880,22 @@
   .ui-menu.hdr-jump,
   .ui-menu.hdr-notif { max-width: 360px; }
   .ui-menu.hdr-menu { max-width: 248px; }
+
+  /* The sheet stays reachable from the account menu at tablet width. */
+  .hdr-search { width: 196px; }
 }
 
 @media (max-width: 47.99rem) {
   .ui-tag.hdr-role,
   .hdr-user__name { display: none; }
-  .hdr-jump-btn__label { display: none; }
-  .hdr-jump-btn { padding-inline: var(--space-xs); }
-  .hdr-jump-btn .ui-kbd { display: none; }
+  .ui-icon-btn.hdr-keys { display: none; }
+  .hdr-search {
+    width: 40px;
+    padding-inline: 0;
+    justify-content: center;
+  }
+  .hdr-search__label,
+  .hdr-search__kbd { display: none; }
   .hdr-user { padding: 0 var(--space-2xs); }
 }
 

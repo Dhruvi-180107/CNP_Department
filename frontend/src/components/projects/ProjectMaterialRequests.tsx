@@ -36,6 +36,8 @@ interface MaterialRequestItem {
 interface ProjectMaterialRequestsProps {
   projectId: string;
   isTL?: boolean;
+  /** Lifts the queue counts so the aside can plot approval coverage. */
+  onStatsChange?: (stats: { total: number; approved: number; pending: number }) => void;
 }
 
 const STATUS_LABEL: Record<MaterialRequestItem['status'], string> = {
@@ -73,7 +75,7 @@ const CartMark = () => (
   </svg>
 );
 
-export function ProjectMaterialRequests({ projectId, isTL = false }: ProjectMaterialRequestsProps) {
+export function ProjectMaterialRequests({ projectId, isTL = false, onStatsChange }: ProjectMaterialRequestsProps) {
   const [requests, setRequests] = useState<MaterialRequestItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -109,6 +111,14 @@ export function ProjectMaterialRequests({ projectId, isTL = false }: ProjectMate
   useEffect(() => {
     fetchRequests();
   }, [projectId]);
+
+  useEffect(() => {
+    onStatsChange?.({
+      total: requests.length,
+      approved: requests.filter((request) => request.status === 'approved').length,
+      pending: requests.filter((request) => request.status === 'pending').length,
+    });
+  }, [requests, onStatsChange]);
 
   // Disable background page scrolling when the modal is open
   useEffect(() => {
@@ -366,8 +376,8 @@ export function ProjectMaterialRequests({ projectId, isTL = false }: ProjectMate
             <p className="ui-empty__title">No material requests yet</p>
             <p className="ui-empty__text">
               {isTL
-                ? 'Request hardware and components from central inventory; approvals land back here.'
-                : 'Requests raised by the team leader appear here with their approval status.'}
+                ? 'Ask central inventory for components; approvals land back here.'
+                : 'Requests raised by the team leader appear here.'}
             </p>
             {isTL && (
               <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={openModal}>
@@ -397,7 +407,6 @@ export function ProjectMaterialRequests({ projectId, isTL = false }: ProjectMate
                 <h2 className="ui-h2" id={`${fieldId}-title`}>
                   Request materials
                 </h2>
-                <p className="ui-sub">Ask the project admin for stock from central inventory.</p>
               </div>
               <button
                 type="button"

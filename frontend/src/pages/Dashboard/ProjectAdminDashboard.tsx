@@ -1,13 +1,17 @@
 import { useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
+import { Counter, Ring, Segments } from '../../components/ui/vis';
+import { Tooltip } from '../../components/ui/Tooltip';
 import {
   DashAvatar,
-  DashEmpty,
   DashIcon,
+  DashQuiet,
   DashLoadError,
   DashNotifications,
-  DashStat,
-  fmtShortDay,
+  riseStyle,
+  shortAge,
+  spokenAge,
 } from './StaffBits';
 
 interface ProjectAdminStats {
@@ -45,9 +49,51 @@ const projectIdOf = (request: any) =>
     ? request.projectId._id
     : request.projectId;
 
+const STAGES = ['pending', 'approved', 'rejected'] as const;
+
+function MiniFunnel({
+  counts,
+  what,
+}: {
+  counts: { pending: number; approved: number; rejected: number };
+  what: string;
+}) {
+  const max = Math.max(1, ...STAGES.map((stage) => counts[stage]));
+  return (
+    <span
+      className="dash-funnel"
+      role="img"
+      aria-label={`${what}: ${counts.pending} pending, ${counts.approved} approved, ${counts.rejected} rejected`}
+    >
+      {STAGES.map((stage) => (
+        <span
+          className="dash-funnel__stage"
+          key={stage}
+          data-stage={stage}
+          title={`${stage} ${counts[stage]}`}
+        >
+          <span className="dash-funnel__label" aria-hidden="true">
+            {stage}
+          </span>
+          <span className="dash-funnel__track">
+            <span
+              className="dash-funnel__bar"
+              style={{ '--dash-w': counts[stage] / max } as CSSProperties}
+            />
+          </span>
+          <span className="dash-funnel__n" aria-hidden="true">
+            {counts[stage]}
+          </span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
 /**
- * Project admin — the operations desk. Portfolio on the left, the two queues
- * that need a decision on the right, the counts that matter in one strip.
+ * Project admin — the console. Portfolio status as proportional blocks that are
+ * also the filter, inventory as capacity cells, and both queues as funnels with
+ * stage depths. Everything is sized to read from across the room.
  */
 export function ProjectAdminDashboard({
   stats,
@@ -66,26 +112,51 @@ export function ProjectAdminDashboard({
     stats?.completedProjects ?? projects.filter((p) => p.status === 'completed').length;
   const inactive =
     stats?.inactiveProjects ?? projects.filter((p) => p.status === 'inactive').length;
+  const total = stats?.totalProjects ?? projects.length;
+  const withLeader =
+    stats?.withTeamLeader ?? projects.filter((project) => Boolean(project.teamLeaderId)).length;
 
   const pendingMaterials = useMemo(
     () => materialRequests.filter((request) => request.status === 'pending'),
     [materialRequests],
   );
-  const pendingJoins = requests;
+  // MOCK: join-request stages are counted in the browser over the full payload
+  const pendingJoins = useMemo(
+    () => requests.filter((request) => request.status === 'pending'),
+    [requests],
+  );
 
-  const withoutLeader = stats
-    ? Math.max(stats.totalProjects - stats.withTeamLeader, 0)
-    : projects.filter((project) => !project.teamLeaderId).length;
+  // MOCK: queue stage counts are client-side tallies of the two list payloads
+  const materialStages = useMemo(
+    () => ({
+      pending: pendingMaterials.length,
+      approved: materialRequests.filter((request) => request.status === 'approved').length,
+      rejected: materialRequests.filter((request) => request.status === 'rejected').length,
+    }),
+    [materialRequests, pendingMaterials.length],
+  );
+  const joinStages = useMemo(
+    () => ({
+      pending: pendingJoins.length,
+      approved: requests.filter((request) => request.status === 'approved').length,
+      rejected: requests.filter((request) => request.status === 'rejected').length,
+    }),
+    [requests, pendingJoins.length],
+  );
+
+  const withoutLeader = Math.max(total - withLeader, 0);
+  const leaderShare = total > 0 ? Math.min(withLeader / total, 1) : 0;
+  const unledTone = withoutLeader > 0 ? 'warning' : 'accent';
 
   // MOCK: inventory totals and units on loan are summed in the browser
   const units = useMemo(
     () =>
       inventory.reduce(
         (acc, item) => {
-          const total = Number(item.totalQuantity) || 0;
+          const itemTotal = Number(item.totalQuantity) || 0;
           const available = Number(item.availableQuantity) || 0;
-          acc.total += total;
-          acc.out += Math.max(total - available, 0);
+          acc.total += itemTotal;
+          acc.out += Math.max(itemTotal - available, 0);
           return acc;
         },
         { total: 0, out: 0 },
@@ -103,29 +174,25 @@ export function ProjectAdminDashboard({
   const filtered = filter === 'all' ? projects : projects.filter((p) => p.status === filter);
 
   const queueCount = pendingMaterials.length + pendingJoins.length;
-  const shownMaterials = pendingMaterials.slice(0, 4);
-  const shownJoins = pendingJoins.slice(0, 4);
+  const shownMaterials = pendingMaterials.slice(0, 3);
+  const shownJoins = pendingJoins.slice(0, 3);
   const hiddenQueue =
     pendingMaterials.length - shownMaterials.length + (pendingJoins.length - shownJoins.length);
 
+  /* The status band is a real proportion of the portfolio: each block's width is
+     its own count. A zero-count status keeps a narrow, clickable stub so the
+     filter is never lost. */
+  // MOCK: block widths are proportions of the real status counts
+  const bandColumns = filters
+    .filter((option) => option.key !== 'all')
+    .map((option) => (option.count > 0 ? `minmax(0, ${option.count}fr)` : 'minmax(58px, auto)'))
+    .join(' ');
+
   return (
-    <div className="dash">
+    <div className="dash dash--console">
       <header className="ui-page-head">
         <div className="ui-page-head__text">
           <h1 className="ui-title">Operations desk</h1>
-          <p className="ui-sub">
-            {projects.length === 0
-              ? 'No projects yet. Material requests and inventory appear once work begins.'
-              : `${projects.length} projects, ${active} active.${
-                  pendingMaterials.length + pendingJoins.length > 0
-                    ? ` ${pendingMaterials.length} material request${
-                        pendingMaterials.length === 1 ? '' : 's'
-                      } and ${pendingJoins.length} join request${
-                        pendingJoins.length === 1 ? '' : 's'
-                      } waiting.`
-                    : ' Nothing is waiting in the queues.'
-                }`}
-          </p>
         </div>
         <div className="ui-page-actions">
           <DashNotifications count={unread} />
@@ -140,131 +207,174 @@ export function ProjectAdminDashboard({
 
       {loadError ? <DashLoadError message={loadError} onRetry={onReload} /> : null}
 
-      <div className="ui-stats">
-        <DashStat value={stats?.totalProjects ?? projects.length} label="Projects" />
-        <DashStat value={active} label="Active" />
-        <DashStat value={completed} label="Completed" />
-        <DashStat value={inactive} label="Inactive" />
+      <div className="dash-console dash-rise" style={riseStyle(0)}>
+        <Link to="/material-requests" className="dash-console__cell">
+          <span className="dash-console__label">Materials</span>
+          <span className="dash-console__n">
+            <Counter value={pendingMaterials.length} />
+          </span>
+          <MiniFunnel counts={materialStages} what="Material requests" />
+          <span className="dash-console__go" aria-hidden="true">
+            <DashIcon name="arrow" size={14} />
+          </span>
+        </Link>
+
+        <Link to="/projects" className="dash-console__cell">
+          <span className="dash-console__label">Joins</span>
+          <span className="dash-console__n">
+            <Counter value={pendingJoins.length} />
+          </span>
+          <MiniFunnel counts={joinStages} what="Project join requests" />
+          <span className="dash-console__go" aria-hidden="true">
+            <DashIcon name="arrow" size={14} />
+          </span>
+        </Link>
+
+        <Link to="/inventory" className="dash-console__cell">
+          <span className="dash-console__label">On loan</span>
+          <span className="dash-console__n">
+            <Counter value={units.out} />
+          </span>
+          <span className="dash-console__capacity">
+            <Segments
+              value={units.out}
+              total={units.total}
+              segments={12}
+              ariaLabel={`${units.out} of ${units.total} units on loan`}
+            />
+            <span className="dash-console__unit" aria-hidden="true">
+              {units.total}
+            </span>
+          </span>
+          <span className="dash-console__go" aria-hidden="true">
+            <DashIcon name="arrow" size={14} />
+          </span>
+        </Link>
+
+        <Link to="/projects" className="dash-console__cell">
+          <span className="dash-console__label">Unled teams</span>
+          <span className="dash-console__n">
+            <Counter value={withoutLeader} />
+          </span>
+          <span className="dash-console__gauge">
+            <Ring
+              value={leaderShare}
+              size={44}
+              tone={unledTone}
+              label={`${withLeader}/${total}`}
+            />
+          </span>
+          <span className="dash-console__go" aria-hidden="true">
+            <DashIcon name="arrow" size={14} />
+          </span>
+        </Link>
       </div>
 
-      <section className="dash-ops" aria-label="Operational queues">
-        <Link to="/material-requests" className="dash-ops__cell">
-          <span className="dash-ops__label">Material requests</span>
-          <span className="dash-ops__value">{pendingMaterials.length}</span>
-          <span className="dash-ops__sub">waiting on review</span>
-          <span className="dash-ops__go" aria-hidden="true">
-            <DashIcon name="arrow" size={15} />
-          </span>
-        </Link>
-        <Link to="/projects" className="dash-ops__cell">
-          <span className="dash-ops__label">Project join requests</span>
-          <span className="dash-ops__value">{pendingJoins.length}</span>
-          <span className="dash-ops__sub">students in the queue</span>
-          <span className="dash-ops__go" aria-hidden="true">
-            <DashIcon name="arrow" size={15} />
-          </span>
-        </Link>
-        <Link to="/inventory" className="dash-ops__cell">
-          <span className="dash-ops__label">Inventory</span>
-          <span className="dash-ops__value">{stats?.inventoryItems ?? inventory.length}</span>
-          <span className="dash-ops__sub">
-            {units.out} of {units.total} units on loan
-          </span>
-          <span className="dash-ops__go" aria-hidden="true">
-            <DashIcon name="arrow" size={15} />
-          </span>
-        </Link>
-        <Link to="/projects" className="dash-ops__cell">
-          <span className="dash-ops__label">Teams without a leader</span>
-          <span className="dash-ops__value">{withoutLeader}</span>
-          <span className="dash-ops__sub">need an assignment</span>
-          <span className="dash-ops__go" aria-hidden="true">
-            <DashIcon name="arrow" size={15} />
-          </span>
-        </Link>
-      </section>
-
       <div className="dash-split">
-        <section className="ui-panel ui-panel--accent" aria-labelledby="pa-portfolio-title">
+        <section
+          className="ui-panel dash-portfolio dash-rise"
+          aria-labelledby="pa-portfolio-title"
+          style={riseStyle(1)}
+        >
           <header className="ui-panel__head">
             <div className="ui-panel__titles">
               <h2 className="ui-panel__title" id="pa-portfolio-title">
                 Portfolio
               </h2>
               <span className="ui-panel__meta">
-                {filtered.length} of {projects.length}
+                <Counter value={filtered.length} />
               </span>
             </div>
-            <Link to="/projects" className="ui-btn ui-btn--quiet ui-btn--sm">
+            <Link to="/projects" className="ui-btn ui-btn--ghost ui-btn--sm">
               All projects
             </Link>
           </header>
 
-          <div className="dash-seg">
-            <div className="ui-seg" role="group" aria-label="Filter projects by status">
-              {filters.map((option) => (
-                <button
-                  key={option.key}
-                  type="button"
-                  aria-pressed={filter === option.key}
-                  onClick={() => setFilter(option.key)}
-                >
-                  {option.label}
-                  <span className="dash-seg__n">{option.count}</span>
-                </button>
-              ))}
+          <div className="dash-band" role="group" aria-label="Filter projects by status">
+            <button
+              type="button"
+              className="dash-band__all"
+              aria-pressed={filter === 'all'}
+              onClick={() => setFilter('all')}
+            >
+              <span className="dash-band__label">All</span>
+              <span className="dash-band__n">
+                <Counter value={projects.length} />
+              </span>
+            </button>
+            <div className="dash-band__track" style={{ gridTemplateColumns: bandColumns }}>
+              {filters
+                .filter((option) => option.key !== 'all')
+                .map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    className="dash-band__block"
+                    data-status={option.key}
+                    data-empty={option.count === 0 || undefined}
+                    aria-pressed={filter === option.key}
+                    onClick={() => setFilter(option.key)}
+                  >
+                    <span className="dash-band__label">{option.label}</span>
+                    <span className="dash-band__n">
+                      <Counter value={option.count} />
+                    </span>
+                  </button>
+                ))}
             </div>
           </div>
 
           <div className="ui-panel__body ui-panel__body--flush">
             {filtered.length ? (
-              <ul className="ui-rows">
+              <ul className="dash-proj-list">
                 {filtered.map((project) => {
                   const leader =
                     project.teamLeaderId && typeof project.teamLeaderId === 'object'
                       ? project.teamLeaderId
                       : null;
                   return (
-                    <li className="ui-row" key={project._id}>
-                      <DashAvatar name={project.name} src={project.image} />
-                      <div className="ui-row__main">
-                        <p className="ui-row__title">
-                          <Link to={`/projects/${project._id}`} className="dash-link">
-                            {project.name}
-                          </Link>
-                        </p>
-                        <p className="ui-row__sub">
-                          {leader ? `Led by ${leader.name}` : 'No team leader assigned'}
-                          {project.updatedAt ? ` · updated ${fmtShortDay(project.updatedAt)}` : ''}
-                        </p>
-                      </div>
-                      <div className="ui-row__meta">
-                        <span className={`ui-tag dash-status ${statusTone(project.status)}`}>
-                          {project.status || 'Unknown'}
+                    <li className="dash-proj" key={project._id}>
+                      <Link to={`/projects/${project._id}`} className="dash-proj__link">
+                        {project.name}
+                      </Link>
+                      <span className={`ui-tag dash-status ${statusTone(project.status)}`}>
+                        {project.status || 'Unknown'}
+                      </span>
+                      <span className="dash-proj__leader">
+                        {leader ? (
+                          <Tooltip label={`Team led by ${leader.name}`}>
+                            <span
+                              className="dash-proj__leader-hit"
+                              role="img"
+                              aria-label={`Team led by ${leader.name}`}
+                              tabIndex={0}
+                            >
+                              <DashAvatar name={leader.name} src={leader.profileImage} size="sm" />
+                              <span className="dash-node__lead" aria-hidden="true">
+                                <DashIcon name="lead" size={9} />
+                              </span>
+                            </span>
+                          </Tooltip>
+                        ) : (
+                          <span className="dash-proj__leader-empty" title="No team leader">
+                            <DashIcon name="users" size={12} />
+                          </span>
+                        )}
+                      </span>
+                      <Tooltip label={`Updated ${spokenAge(project.updatedAt)}`}>
+                        <span className="dash-proj__age" tabIndex={0}>
+                          {shortAge(project.updatedAt)}
                         </span>
-                      </div>
-                      <div className="ui-row__actions">
-                        <Link
-                          to={`/projects/${project._id}`}
-                          className="ui-btn ui-btn--quiet ui-btn--sm"
-                        >
-                          Open
-                        </Link>
-                      </div>
+                      </Tooltip>
                     </li>
                   );
                 })}
               </ul>
             ) : (
               <div className="ui-panel__body">
-                <DashEmpty
+                <DashQuiet
                   icon="ops"
                   title={`No ${filter === 'all' ? '' : filter} projects`}
-                  text={
-                    filter === 'all'
-                      ? 'Projects appear here once they are created.'
-                      : 'No project currently carries this status.'
-                  }
                   action={
                     filter !== 'all' ? (
                       <button
@@ -282,111 +392,86 @@ export function ProjectAdminDashboard({
           </div>
         </section>
 
-        <aside className="dash-col" aria-label="Operational queues">
-        <section className="ui-panel" aria-labelledby="pa-queue-title">
+        <section
+          className="ui-panel dash-waiting dash-rise"
+          aria-labelledby="pa-queue-title"
+          style={riseStyle(2)}
+        >
           <header className="ui-panel__head">
             <div className="ui-panel__titles">
               <h2 className="ui-panel__title" id="pa-queue-title">
                 Waiting on you
               </h2>
-              <span className="ui-panel__meta">{queueCount}</span>
+              <span className="ui-panel__meta">
+                <Counter value={queueCount} />
+              </span>
             </div>
           </header>
 
           <div className="ui-panel__body ui-panel__body--flush">
             {queueCount === 0 ? (
               <div className="ui-panel__body">
-                <DashEmpty
-                  icon="check"
-                  title="Queues are clear"
-                  text="No material request or project join request is pending."
-                />
+                <DashQuiet icon="check" title="Queues are clear" />
               </div>
             ) : (
-              <>
-                {pendingMaterials.length > 0 ? (
-                  <>
-                    <p className="dash-group">
-                      <span>Material requests</span>
-                      <span className="dash-group__count">{pendingMaterials.length}</span>
-                    </p>
-                    <ul className="ui-rows" aria-label="Pending material requests">
-                      {shownMaterials.map((request) => {
-                        const item =
-                          request.inventoryItemId?.name ||
-                          request.materialName ||
-                          'Requested material';
-                        const quantity = Number(request.quantity) || 0;
-                        const projectName = request.projectId?.name || 'Project';
-                        return (
-                          <li className="ui-row" key={request._id}>
-                            <div className="ui-row__main">
-                              <p className="ui-row__title">{item}</p>
-                              <p className="ui-row__sub">
-                                {quantity} unit{quantity === 1 ? '' : 's'} · {projectName}
-                                {request.requestedBy?.name ? ` · ${request.requestedBy.name}` : ''}
-                              </p>
-                            </div>
-                            <div className="ui-row__meta">
-                              <span className="dash-at">{fmtShortDay(request.createdAt)}</span>
-                              <Link
-                                to="/material-requests"
-                                className="ui-btn ui-btn--quiet ui-btn--sm"
-                              >
-                                Review
-                              </Link>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </>
-                ) : null}
+              <ul className="dash-wait-list">
+                {shownMaterials.map((request) => {
+                  const item =
+                    request.inventoryItemId?.name || request.materialName || 'Requested material';
+                  const quantity = Number(request.quantity) || 0;
+                  const projectName = request.projectId?.name || 'Project';
+                  return (
+                    <li className="dash-wait" key={request._id}>
+                      <span className="dash-wait__mark" aria-hidden="true">
+                        <DashIcon name="box" size={14} />
+                      </span>
+                      <span className="dash-wait__main">
+                        <span className="dash-wait__title">
+                          {item}
+                          <span className="dash-wait__qty"> ×{quantity}</span>
+                        </span>
+                        <span className="dash-wait__meta">{projectName}</span>
+                      </span>
+                      <span className="dash-wait__age" title={spokenAge(request.createdAt)}>
+                        {shortAge(request.createdAt)}
+                      </span>
+                      <Link
+                        to="/material-requests"
+                        className="ui-btn ui-btn--quiet ui-btn--sm dash-wait__go"
+                      >
+                        Review
+                      </Link>
+                    </li>
+                  );
+                })}
 
-                {pendingJoins.length > 0 ? (
-                  <>
-                    <p className="dash-group">
-                      <span>Join requests</span>
-                      <span className="dash-group__count">{pendingJoins.length}</span>
-                    </p>
-                    <ul className="ui-rows" aria-label="Pending project join requests">
-                      {shownJoins.map((request) => {
-                        const student = request.studentId;
-                        const projectId = projectIdOf(request);
-                        return (
-                          <li className="ui-row" key={request._id}>
-                            <DashAvatar
-                              name={student?.name}
-                              src={student?.profileImage}
-                              size="sm"
-                            />
-                            <div className="ui-row__main">
-                              <p className="ui-row__title">
-                                {student?.name || 'Unknown student'}
-                              </p>
-                              <p className="ui-row__sub">
-                                {request.projectId?.name || 'Project'}
-                                {student?.department ? ` · ${student.department}` : ''}
-                              </p>
-                            </div>
-                            <div className="ui-row__meta">
-                              <span className="dash-at">{fmtShortDay(request.createdAt)}</span>
-                              {projectId ? (
-                                <Link
-                                  to={`/projects/${projectId}#join-requests`}
-                                  className="ui-btn ui-btn--quiet ui-btn--sm"
-                                >
-                                  Review
-                                </Link>
-                              ) : null}
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </>
-                ) : null}
-              </>
+                {shownJoins.map((request) => {
+                  const student = request.studentId;
+                  const projectId = projectIdOf(request);
+                  return (
+                    <li className="dash-wait" key={request._id}>
+                      <DashAvatar name={student?.name} src={student?.profileImage} size="sm" />
+                      <span className="dash-wait__main">
+                        <span className="dash-wait__title">{student?.name || 'Unknown student'}</span>
+                        <span className="dash-wait__meta">
+                          {request.projectId?.name || 'Project'}
+                        </span>
+                      </span>
+                      <span className="dash-wait__age" title={spokenAge(request.createdAt)}>
+                        {shortAge(request.createdAt)}
+                      </span>
+                      {projectId ? (
+                        <Link
+                          to={`/projects/${projectId}#join-requests`}
+                          className="ui-btn ui-btn--quiet ui-btn--sm dash-wait__go"
+                        >
+                          Review
+                        </Link>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </div>
 
@@ -399,109 +484,75 @@ export function ProjectAdminDashboard({
             </footer>
           ) : null}
         </section>
-
-        </aside>
       </div>
 
-      <section className="ui-panel" aria-labelledby="pa-inventory-title">
+      <section
+        className="ui-panel dash-inventory dash-rise"
+        aria-labelledby="pa-inventory-title"
+        style={riseStyle(3)}
+      >
         <header className="ui-panel__head">
           <div className="ui-panel__titles">
             <h2 className="ui-panel__title" id="pa-inventory-title">
               Inventory
             </h2>
             <span className="ui-panel__meta">
-              {stats?.inventoryItems ?? inventory.length} items · {units.out} of {units.total} units on loan
+              <Counter value={stats?.inventoryItems ?? inventory.length} />
+            </span>
+            <span className="dash-inventory__figure">
+              <span className="dash-inventory__out">
+                <Counter value={units.out} />
+              </span>
+              <span className="dash-inventory__slash" aria-hidden="true">
+                /
+              </span>
+              <span className="dash-inventory__total">
+                <Counter value={units.total} />
+              </span>
+              <span className="dash-inventory__unit">on loan</span>
             </span>
           </div>
-          <Link to="/inventory" className="ui-btn ui-btn--quiet ui-btn--sm">
+          <Link to="/inventory" className="ui-btn ui-btn--ghost ui-btn--sm">
             Open inventory
           </Link>
         </header>
 
         {inventory.length ? (
-          <div className="ui-panel__body ui-panel__body--flush ui-scroll-x dash-inv-table">
-            <table className="ui-table dash-inventory">
-              <thead>
-                <tr>
-                  <th scope="col">Item</th>
-                  <th scope="col">Availability</th>
-                  <th scope="col" className="is-num">Available</th>
-                  <th scope="col" className="is-num">Total</th>
-                  <th scope="col" className="is-num">On loan</th>
-                </tr>
-              </thead>
-              <tbody>
-                {inventory.map((item) => {
-                  const totalUnits = Number(item.totalQuantity) || 0;
-                  const availableUnits = Number(item.availableQuantity) || 0;
-                  const out = Math.max(totalUnits - availableUnits, 0);
-                  const availableShare = totalUnits > 0 ? availableUnits / totalUnits : 0;
-                  return (
-                    <tr key={item._id}>
-                      <td>
-                        <Link to="/inventory" className="dash-link dash-inventory__name">
-                          {item.name}
-                        </Link>
-                      </td>
-                      <td>
-                        <span className="ui-meter dash-inventory__meter" aria-hidden="true">
-                          <span
-                            className="ui-meter__fill"
-                            style={{ transform: `scaleX(${availableShare})` }}
-                          />
-                        </span>
-                      </td>
-                      <td className="is-num">{availableUnits}</td>
-                      <td className="is-num">{totalUnits}</td>
-                      <td className="is-num">{out}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="dash-caps">
+            {inventory.map((item) => {
+              const itemTotal = Number(item.totalQuantity) || 0;
+              const available = Number(item.availableQuantity) || 0;
+              const out = Math.max(itemTotal - available, 0);
+              return (
+                <Tooltip
+                  key={item._id}
+                  label={`${available} of ${itemTotal} available, ${out} on loan`}
+                >
+                  <Link to="/inventory" className="dash-cap">
+                    <span className="dash-cap__name">{item.name}</span>
+                    <span className="dash-cap__n">
+                      <Counter value={available} />
+                      <span className="dash-cap__of">/{itemTotal}</span>
+                    </span>
+                    <span className="dash-cap__cells">
+                      <Segments
+                        value={available}
+                        total={itemTotal}
+                        segments={10}
+                        tone="ramp"
+                        ariaLabel={`${available} of ${itemTotal} units available`}
+                      />
+                    </span>
+                  </Link>
+                </Tooltip>
+              );
+            })}
           </div>
         ) : (
           <div className="ui-panel__body">
-            <DashEmpty
-              icon="box"
-              title="No inventory yet"
-              text="Equipment added to inventory will be listed here."
-            />
+            <DashQuiet icon="box" title="No inventory yet" />
           </div>
         )}
-
-        {inventory.length ? (
-          <ul className="ui-rows dash-inv-list">
-            {inventory.map((item) => {
-              const totalUnits = Number(item.totalQuantity) || 0;
-              const availableUnits = Number(item.availableQuantity) || 0;
-              const out = Math.max(totalUnits - availableUnits, 0);
-              const availableShare = totalUnits > 0 ? availableUnits / totalUnits : 0;
-              return (
-                <li className="ui-row" key={item._id}>
-                  <div className="ui-row__main">
-                    <p className="ui-row__title">
-                      <Link to="/inventory" className="dash-link">
-                        {item.name}
-                      </Link>
-                    </p>
-                    <p className="ui-row__sub">
-                      {availableUnits} of {totalUnits} available · {out} on loan
-                    </p>
-                    <span className="dash-meter">
-                      <span className="ui-meter" aria-hidden="true">
-                        <span
-                          className="ui-meter__fill"
-                          style={{ transform: `scaleX(${availableShare})` }}
-                        />
-                      </span>
-                    </span>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        ) : null}
       </section>
     </div>
   );

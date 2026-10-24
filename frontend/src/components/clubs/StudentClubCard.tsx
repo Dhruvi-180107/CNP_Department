@@ -1,5 +1,16 @@
 import { useState } from 'react';
+import { AvatarStack, Counter, Ring, Segments } from '../ui/vis';
+import { Tooltip } from '../ui/Tooltip';
+import { Crest } from './Crest';
+import { RoleMark, type RoleKind } from './RoleMark';
 import '../../pages/Clubs/clubs.css';
+
+interface RosterPreviewMember {
+  name: string;
+  image?: string | null;
+  core?: boolean;
+  position?: string | null;
+}
 
 interface StudentClubCardProps {
   club: {
@@ -18,6 +29,8 @@ interface StudentClubCardProps {
     totalMembers?: number;
     memberCount?: number;
     coreTeamCount?: number;
+    /** The roster the directory already fetched: real names, never invented. */
+    rosterPreview?: RosterPreviewMember[];
   };
   membership?: {
     membershipType: string;
@@ -32,24 +45,25 @@ interface StudentClubCardProps {
   onClick: () => void;
 }
 
-/** First letters of the two significant words in a club name. */
-function monogram(name: string): string {
-  const cleaned = name
-    .replace(/\b(club|society|committee|association|collective|group|cell)\b/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  const words = cleaned.split(' ').filter(Boolean);
-  if (!words.length) return name.trim().slice(0, 2).toUpperCase();
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return (words[0][0] + words[1][0]).toUpperCase();
-}
-
 const ArrowRight = () => (
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M4 12h15M13 6l6 6-6 6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
 
+const VoidMark = () => (
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="clubs-void__mark">
+    <path d="M5 19 19 5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    <rect x="4.5" y="4.5" width="15" height="15" rx="2" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2.4 2.6" />
+  </svg>
+);
+
+/**
+ * A club as a crest: the lead plate on a directory page, a ruled entry otherwise.
+ * Names are the only prose; members are a stack, composition is a scale, and the
+ * viewer's own standing is a mark. Description and coordinator live in the crest's
+ * inspector.
+ */
 export function StudentClubCard({
   club,
   membership = null,
@@ -58,7 +72,6 @@ export function StudentClubCard({
   lead = false,
   onClick,
 }: StudentClubCardProps) {
-  const [logoError, setLogoError] = useState(false);
   const [coordImgError, setCoordImgError] = useState(false);
 
   const isCoreTeam = membership?.membershipType === 'core_team';
@@ -73,44 +86,166 @@ export function StudentClubCard({
       : null;
 
   const coordInitial = coordinator?.name
-    ? coordinator.name.replace(/^Dr\.\s*/i, '').trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join('').toUpperCase() || 'C'
+    ? coordinator.name
+        .replace(/^Dr\.\s*/i, '')
+        .trim()
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((p) => p[0])
+        .join('')
+        .toUpperCase() || 'C'
     : 'C';
 
   const clubImage = club.logo || club.coverImage || (club.images && club.images.length > 0 ? club.images[0] : null);
 
   const members = club.memberCount ?? club.totalMembers;
   const coreTeam = club.coreTeamCount ?? null;
-  const coreShare =
-    members && coreTeam != null && members > 0 ? Math.min(1, coreTeam / members) : null;
-  const regular = members != null && coreTeam != null ? members - coreTeam : null;
+  const coreShare = members && coreTeam != null && members > 0 ? Math.min(1, coreTeam / members) : null;
 
-  const membershipTag = tag
-    ? { text: tag, tone: 'ui-tag--plain' }
+  const roster = club.rosterPreview ?? [];
+  const coreRoster = roster.filter((p) => p.core);
+  const stack = (coreRoster.length ? coreRoster : roster).slice(0, lead ? 6 : 4).map((p) => ({
+    name: p.name,
+    image: p.image ?? undefined,
+  }));
+
+  const state: { role: RoleKind; label: string } | null = tag
+    ? { role: tag === 'Admin' ? 'admin' : 'coordinator', label: tag }
     : pending
-      ? { text: 'Request pending', tone: 'is-warning' }
+      ? { role: 'pending', label: 'Request pending' }
       : isCoreTeam
-        ? { text: position ? `Core team · ${position}` : 'Core team', tone: 'is-accent' }
+        ? { role: 'core', label: position ? `Core team · ${position}` : 'Core team' }
         : membership
-          ? { text: 'Member', tone: '' }
+          ? { role: 'member', label: 'Member' }
           : null;
 
-  const tagNode = membershipTag ? (
-    <span className={`ui-tag ${membershipTag.tone}`}>{membershipTag.text}</span>
+  const inspector = [
+    club.description ? club.description.trim() : null,
+    coordinator?.name
+      ? `Faculty coordinator ${coordinator.name}${coordinator.department ? `, ${coordinator.department}` : ''}`
+      : 'No faculty coordinator assigned',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  const ariaName = [
+    club.name,
+    typeof members === 'number' ? `${members} ${members === 1 ? 'member' : 'members'}` : null,
+    state ? state.label : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
+
+  const ring = coreShare != null ? (
+    <Ring
+      value={coreShare}
+      size={68}
+      label={members ? `${coreTeam}/${members}` : '0/0'}
+      caption="core"
+      tone="accent"
+    />
   ) : null;
 
-  const openAffordance = (
-    <span className="clubs-card__open">
+  const rowActions = (
+    <span className="clubs-open">
       {lead ? 'Open club' : 'Open'}
       <ArrowRight />
     </span>
   );
 
+  const crest = (
+    <Tooltip label={inspector}>
+      <span className={lead ? 'clubs-lead__crest' : 'clubs-row__crest'}>
+        <Crest
+          name={club.name}
+          image={clubImage}
+          size={lead ? 84 : 40}
+          lit={Boolean(membership)}
+        />
+      </span>
+    </Tooltip>
+  );
+
+  if (lead) {
+    return (
+      <article
+        className="clubs-lead"
+        role="button"
+        tabIndex={0}
+        aria-label={ariaName}
+        data-club-id={club._id}
+        onClick={onClick}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick();
+          }
+        }}
+      >
+        {crest}
+
+        <div className="clubs-lead__id">
+          <div className="clubs-lead__title-row">
+            <h3 className="clubs-lead__name">{club.name}</h3>
+            {state ? (
+              <span className="clubs-lead__state">
+                <RoleMark role={state.role} label={state.label} quiet size={14} />
+                <span>{state.label}</span>
+              </span>
+            ) : null}
+          </div>
+
+          <div className="clubs-lead__facts">
+            {coordinator?.name ? (
+              <span className="clubs-chip" aria-label={`Faculty coordinator ${coordinator.name}`}>
+                {coordinator.profileImage && !coordImgError ? (
+                  <img
+                    src={coordinator.profileImage}
+                    alt=""
+                    onError={() => setCoordImgError(true)}
+                    className="clubs-chip__face"
+                  />
+                ) : (
+                  <span className="clubs-chip__face" aria-hidden="true">{coordInitial}</span>
+                )}
+                <span className="clubs-chip__name">{coordinator.name}</span>
+                {coordinator.department ? (
+                  <span className="clubs-chip__dept">{coordinator.department}</span>
+                ) : null}
+              </span>
+            ) : (
+              <Tooltip label="No faculty coordinator assigned">
+                <span className="clubs-chip clubs-chip--void" aria-label="No faculty coordinator">
+                  <VoidMark />
+                </span>
+              </Tooltip>
+            )}
+
+            {stack.length > 0 ? <AvatarStack people={stack} max={lead ? 5 : 4} size="sm" /> : null}
+
+            {typeof members === 'number' ? (
+              <span className="clubs-lead__count">
+                <Counter value={members} className="clubs-lead__n" />
+                <span>{members === 1 ? 'member' : 'members'}</span>
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        {ring ? <span className="clubs-lead__gauge">{ring}</span> : null}
+
+        {rowActions}
+      </article>
+    );
+  }
+
   return (
     <article
-      className={`clubs-card${lead ? ' clubs-card--lead' : ''}`}
+      className="clubs-row"
       role="button"
       tabIndex={0}
-      aria-label={`${club.name}${membershipTag ? `, ${membershipTag.text}` : ''}`}
+      aria-label={ariaName}
+      data-club-id={club._id}
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -119,80 +254,45 @@ export function StudentClubCard({
         }
       }}
     >
-      <div className="clubs-card__plate">
-        {clubImage && !logoError ? (
-          <img
-            src={clubImage}
-            alt=""
-            onError={() => setLogoError(true)}
-            className="clubs-mono clubs-mono--image"
-          />
+      {crest}
+
+      <span className="clubs-row__name">{club.name}</span>
+
+      {stack.length > 0 ? (
+        <span className="clubs-row__stack">
+          <AvatarStack people={stack} max={4} size="sm" />
+        </span>
+      ) : null}
+
+      <span className="clubs-row__bar">
+        {members ? (
+          <Tooltip
+            label={`${coreTeam ?? 0} of ${members} in the core team · ${
+              Math.max(0, members - (coreTeam ?? 0))
+            } regular`}
+          >
+            <span className="clubs-row__bar-track">
+              <Segments
+                value={coreTeam ?? 0}
+                total={members}
+                segments={8}
+                tone="ramp"
+                ariaLabel={`${coreTeam ?? 0} of ${members} in the core team`}
+              />
+            </span>
+          </Tooltip>
         ) : (
-          <span className="clubs-mono" aria-hidden="true">{monogram(club.name)}</span>
+          <span className="clubs-hatch" aria-hidden="true" />
         )}
-      </div>
+      </span>
 
-      <div className="clubs-card__main">
-        <div className="clubs-card__title-row">
-          <h3 className="clubs-card__name">{club.name}</h3>
-          {lead ? tagNode : null}
-          {lead ? openAffordance : null}
-        </div>
+      <span className="clubs-row__count" aria-hidden="true">
+        {typeof members === 'number' ? members : '—'}
+      </span>
 
-        <p className="clubs-card__desc">{club.description || 'No description yet.'}</p>
+      {state ? <RoleMark role={state.role} label={state.label} quiet size={16} /> : <span className="clubs-row__mark-gap" aria-hidden="true" />}
 
-        <div className="clubs-card__meta">
-          {coordinator?.name ? (
-            <span className="clubs-card__coord">
-              {coordinator.profileImage && !coordImgError ? (
-                <img
-                  src={coordinator.profileImage}
-                  alt=""
-                  onError={() => setCoordImgError(true)}
-                  className="clubs-card__coord-face"
-                />
-              ) : (
-                <span className="clubs-card__coord-face" aria-hidden="true">{coordInitial}</span>
-              )}
-              <span className="clubs-card__coord-text">
-                <span className="clubs-card__coord-name">{coordinator.name}</span>
-                {coordinator.department && (
-                  <span className="clubs-card__coord-dept">{coordinator.department}</span>
-                )}
-              </span>
-            </span>
-          ) : (
-            <span className="clubs-card__coord clubs-card__coord--none">No coordinator assigned</span>
-          )}
-
-          {members != null && (
-            <>
-              <span className="clubs-card__dot" aria-hidden="true" />
-              <span className="clubs-card__count">
-                {members} {members === 1 ? 'member' : 'members'}
-              </span>
-            </>
-          )}
-        </div>
-      </div>
-
-      {lead ? (
-        coreShare != null ? (
-          <div className="clubs-card__comp">
-            <div className="ui-meter" aria-hidden="true">
-              <div className="ui-meter__fill" style={{ transform: `scaleX(${coreShare})` }} />
-            </div>
-            <span className="clubs-card__comp-label">
-              <b>{coreTeam}</b> core team · <b>{regular}</b> {regular === 1 ? 'member' : 'members'}
-            </span>
-          </div>
-        ) : null
-      ) : (
-        <div className="clubs-card__side">
-          {tagNode}
-          {openAffordance}
-        </div>
-      )}
+      {rowActions}
     </article>
   );
 }

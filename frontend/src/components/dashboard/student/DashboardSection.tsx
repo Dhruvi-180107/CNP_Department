@@ -1,24 +1,25 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertIcon, ArrowRightIcon } from './StudentIcons';
+import { ArrowRightIcon } from './StudentIcons';
 
 interface DashboardSectionProps {
   id: string;
   title: string;
-  /** A short fact beside the title — a count, a window, a state. */
-  meta?: string;
+  /** A count or a short state beside the title. Never a sentence. */
+  meta?: ReactNode;
   actionLabel?: string;
   /** Navigates (preferred) or fires a callback. */
   actionTo?: string;
   onAction?: () => void;
-  /** Marks the page's one emphasised object. */
-  accent?: boolean;
-  /** A quiet looping mark beside the title (the page's single live affordance). */
-  live?: boolean;
   className?: string;
   children: ReactNode;
 }
 
+/**
+ * A region of the dashboard: one label row, then either an object or ruled
+ * rows. No panel frame — the page draws hierarchy with a single rule and open
+ * space, so regions cannot nest inside one another.
+ */
 export function DashboardSection({
   id,
   title,
@@ -26,35 +27,27 @@ export function DashboardSection({
   actionLabel,
   actionTo,
   onAction,
-  accent = false,
-  live = false,
   className = '',
   children,
 }: DashboardSectionProps) {
-  const actionClass = 'ui-btn ui-btn--quiet ui-btn--sm sd-panel__action';
+  const actionClass = 'sd-region__action';
 
   return (
-    <section
-      className={`ui-panel${accent ? ' ui-panel--accent' : ''} ${className}`.trim()}
-      aria-labelledby={`${id}-heading`}
-    >
-      <header className="ui-panel__head">
-        <div className="ui-panel__titles">
-          <h2 className="ui-panel__title" id={`${id}-heading`}>
-            {title}
-          </h2>
-          {live ? <span className="sd-live" aria-hidden="true" /> : null}
-          {meta ? <span className="ui-panel__meta">{meta}</span> : null}
-        </div>
+    <section className={`sd-region ${className}`.trim()} aria-labelledby={`${id}-heading`}>
+      <header className="sd-region__head">
+        <h2 className="sd-region__title" id={`${id}-heading`}>
+          {title}
+        </h2>
+        {meta !== undefined && meta !== null ? <span className="sd-region__meta">{meta}</span> : null}
         {actionLabel && actionTo ? (
           <Link className={actionClass} to={actionTo}>
             {actionLabel}
-            <ArrowRightIcon className="sd-icon sd-icon--sm sd-arrow" />
+            <ArrowRightIcon className="sd-icon sd-icon--xs sd-arrow" />
           </Link>
         ) : actionLabel && onAction ? (
           <button type="button" className={actionClass} onClick={onAction}>
             {actionLabel}
-            <ArrowRightIcon className="sd-icon sd-icon--sm sd-arrow" />
+            <ArrowRightIcon className="sd-icon sd-icon--xs sd-arrow" />
           </button>
         ) : null}
       </header>
@@ -63,13 +56,18 @@ export function DashboardSection({
   );
 }
 
-/** A failed fetch stated in place, without pretending the rest of the page is empty. */
+/**
+ * A failed fetch stated in place, without pretending the rest of the page is
+ * empty. One word is enough here: the page's notice already carries the message
+ * and the retry, and four copies of it would be noise. The detail stays in the
+ * accessible name.
+ */
 export function PanelError({ message }: { message: string }) {
   return (
-    <div className="sd-panel__state">
-      <p className="ui-notice ui-notice--error sd-error" role="alert">
-        <AlertIcon className="sd-icon sd-icon--sm" />
-        <span>{message}</span>
+    <div className="sd-region__state">
+      <p className="sd-region__empty sd-region__empty--error" role="status">
+        Unavailable
+        <span className="ui-visually-hidden">: {message}</span>
       </p>
     </div>
   );

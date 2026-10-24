@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../services/api';
 import { usePageLoading } from '../../context/LoadingContext';
+import { Counter } from '../../components/ui/vis';
+import { Tooltip } from '../../components/ui/Tooltip';
+import { OpsOverlay } from '../Inventory/OpsOverlay';
 import '../Inventory/ops.css';
 
 interface RequestUser {
@@ -42,10 +46,10 @@ interface MaterialRequest {
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
 
-const STATUS_META: Record<MaterialRequest['status'], { label: string; tag: string }> = {
-  pending: { label: 'Pending', tag: 'is-warning' },
-  approved: { label: 'Approved', tag: 'is-positive' },
-  rejected: { label: 'Rejected', tag: 'is-negative' },
+const STATUS_LABEL: Record<MaterialRequest['status'], string> = {
+  pending: 'Pending',
+  approved: 'Approved',
+  rejected: 'Rejected',
 };
 
 const itemNameOf = (request: MaterialRequest) =>
@@ -55,11 +59,6 @@ const formatDay = (value?: string | null) =>
   value
     ? new Date(value).toLocaleDateString(undefined, { day: '2-digit', month: 'short' })
     : 'Unknown';
-
-const formatTime = (value?: string | null) =>
-  value
-    ? new Date(value).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-    : '';
 
 const formatStamp = (value?: string | null) =>
   value
@@ -80,13 +79,19 @@ const initialsOf = (name?: string) =>
     .map((part) => part[0]?.toUpperCase())
     .join('');
 
+const waitMs = (value?: string) => (value ? Math.max(0, Date.now() - new Date(value).getTime()) : 0);
+
 const waitingLabel = (value?: string) => {
   if (!value) return 'None';
-  const elapsed = Date.now() - new Date(value).getTime();
-  if (elapsed < 60 * 60 * 1000) return 'under 1h';
+  const elapsed = waitMs(value);
+  if (elapsed < 60 * 60 * 1000) return `${Math.max(1, Math.round(elapsed / (60 * 1000)))}m`;
   if (elapsed < 24 * 60 * 60 * 1000) return `${Math.floor(elapsed / (60 * 60 * 1000))}h`;
   return `${Math.floor(elapsed / (24 * 60 * 60 * 1000))}d`;
 };
+
+const rise = (index: number): CSSProperties => ({ '--i': Math.min(index, 7) } as CSSProperties);
+
+const isPending = (request: MaterialRequest) => request.status === 'pending';
 
 function SearchIcon() {
   return (
@@ -148,133 +153,198 @@ function DocumentIcon() {
   );
 }
 
-interface QueueRowProps {
+/* ─────────────────────────────────────────────────────────────────────────────
+   The two marks this area repeats: requested against stock, and a status square.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+interface StockBarProps {
+  requested: number;
+  available?: number | null;
+  size?: 'sm' | 'md';
+}
+
+/**
+ * Requested quantity measured against the stock on hand. The fill is the request;
+ * the vertical mark is what the shelf holds. A request past the mark is short.
+ * With no stock number the bar draws the bare request and says so.
+ */
+function StockBar({ requested, available, size = 'sm' }: StockBarProps) {
+  const known = typeof available === 'number' && Number.isFinite(available);
+  const stock = known ? (available as number) : 0;
+  const ceiling = Math.max(requested, stock, 1);
+  const requestFrac = Math.max(0, Math.min(requested / ceiling, 1));
+  const stockFrac = known ? Math.max(0, Math.min(stock / ceiling, 1)) : 1;
+  const short = known && requested > stock;
+
+  return (
+    <span
+      className={`ops-stockbar ops-stockbar--${size}${short ? ' is-short' : ''}`}
+      role="img"
+      aria-label={
+        known
+          ? `${requested} requested, ${stock} in stock${short ? ', short by ' + (requested - stock) : ''}`
+          : `${requested} requested, stock not listed`
+      }
+    >
+      <span className="ops-stockbar__track" aria-hidden="true">
+        <span className="ops-stockbar__fill" style={{ '--w': requestFrac } as CSSProperties} />
+        {known && <span className="ops-stockbar__stock" style={{ '--x': stockFrac } as CSSProperties} />}
+      </span>
+    </span>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Pipeline — pending → approved → rejected, proportional widths, plus the age
+   of everything still waiting on one rail.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+interface StageProps {
+  stage: Exclude<StatusFilter, 'all'>;
+  count: number;
+  total: number;
+  index: number;
+  pressed: boolean;
+  onToggle: () => void;
+}
+
+function Stage({ stage, count, total, index, pressed, onToggle }: StageProps) {
+  const share = total > 0 ? count / total : 0;
+  return (
+    <button
+      type="button"
+      className="ops-stage"
+      data-status={stage}
+      aria-pressed={pressed}
+      onClick={onToggle}
+      style={{ '--w': share, '--i': index } as CSSProperties}
+    >
+      <span className={`ops-stage__mark ops-mark--${stage}`} aria-hidden="true" />
+      <span className="ops-stage__label">{STATUS_LABEL[stage]}</span>
+      <span className="ops-stage__track" aria-hidden="true">
+        <span className="ops-stage__fill" />
+      </span>
+      <span className="ops-stage__n">
+        <Counter value={count} />
+      </span>
+    </button>
+  );
+}
+
+function AgeRail({ requests }: { requests: MaterialRequest[] }) {
+  const oldest = requests.reduce((max, request) => Math.max(max, waitMs(request.createdAt)), 0);
+  const span = Math.max(oldest, 1);
+  const oldestRequest = requests.reduce<MaterialRequest | null>(
+    (found, request) => (!found || waitMs(request.createdAt) > waitMs(found.createdAt) ? request : found),
+    null,
+  );
+
+  return (
+    <div
+      className="ops-age"
+      role="img"
+      aria-label={`${requests.length} waiting, oldest ${waitingLabel(oldestRequest?.createdAt)}`}
+    >
+      <span className="ops-age__label">Waiting</span>
+      <div className="ops-age__rail">
+        {requests.map((request) => {
+          const fraction = waitMs(request.createdAt) / span;
+          const isOldest = request === oldestRequest;
+          return (
+            <span
+              className={`ops-age__tick${isOldest ? ' is-oldest' : ''}`}
+              key={request._id}
+              style={{ left: `${fraction * 100}%` }}
+              title={`${request.requestedBy?.name || 'Unknown requester'} · ${waitingLabel(request.createdAt)}`}
+            />
+          );
+        })}
+      </div>
+      <div className="ops-age__axis" aria-hidden="true">
+        <span>now</span>
+        <span>{waitingLabel(oldestRequest?.createdAt)}</span>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   One ticket in the review queue.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+interface TicketProps {
   request: MaterialRequest;
+  ageFraction: number;
   onOpen: (request: MaterialRequest) => void;
   onApprove: (request: MaterialRequest) => void;
   onReject: (request: MaterialRequest) => void;
   busy: boolean;
 }
 
-function QueueRow({ request, onOpen, onApprove, onReject, busy }: QueueRowProps) {
+function Ticket({ request, ageFraction, onOpen, onApprove, onReject, busy }: TicketProps) {
   const item = itemNameOf(request);
   const project = request.projectId?.name || 'Unknown project';
   const requester = request.requestedBy;
   const available = request.inventoryItemId?.availableQuantity;
-  const short = available != null && request.quantity > available;
-  const status = STATUS_META[request.status];
-  const pending = request.status === 'pending';
-  const subLine = request.reason?.trim()
-    || request.specifications?.trim()
-    || (request.status === 'rejected' && request.rejectionReason
-      ? `Rejected: ${request.rejectionReason}`
-      : 'No reason recorded');
+  const note = request.reason?.trim() || request.specifications?.trim() || '';
 
   return (
-    <li className="ops-queue__row">
+    <li className="ops-ticket" style={{ '--age': ageFraction } as CSSProperties}>
       <button
         type="button"
-        className="ops-queue__open"
-        aria-label={`Open request for ${request.quantity} of ${item} from ${requester?.name || 'unknown requester'}`}
+        className="ops-ticket__open"
+        aria-label={`Open request for ${request.quantity} of ${item} from ${requester?.name || 'unknown requester'}, waiting ${waitingLabel(request.createdAt)}`}
         onClick={() => onOpen(request)}
       />
+      <span className="ops-ticket__wait" title={`Waiting ${waitingLabel(request.createdAt)}`}>
+        {waitingLabel(request.createdAt)}
+      </span>
 
-      <div className="ops-queue__cell">
-        <div className="ops-queue__intro">
-          <span className="ops-queue__name">{item}</span>
-          {request.inventoryItemId?.category && (
-            <span className="ui-tag ui-tag--plain">{request.inventoryItemId.category}</span>
-          )}
-        </div>
-        <p className="ops-queue__sub" title={subLine}>{subLine}</p>
-        <p className="ops-queue__mobile">
-          <span>{requester?.name || 'Unknown requester'}</span>
-          <span className="ops-queue__meta-inline">
-            <span>{project}</span>
-            <span>{request.quantity} requested</span>
-            <span>{formatDay(request.createdAt)}</span>
-          </span>
-        </p>
+      <span
+        className="ui-avatar ui-avatar--sm ops-ticket__who"
+        title={[requester?.name, requester?.email, requester?.department, requester?.semester ? `Sem ${requester.semester}` : null]
+          .filter(Boolean)
+          .join(' · ')}
+        aria-hidden="true"
+      >
+        {initialsOf(requester?.name)}
+      </span>
+
+      <div className="ops-ticket__main">
+        <p className="ops-ticket__item" title={note || item}>{item}</p>
+        <p className="ops-ticket__project">{project}</p>
       </div>
 
-      <div className="ops-queue__cell ops-queue__project">
-        <p className="ops-queue__project">{project}</p>
-        {request.projectId?.status && request.projectId.status !== 'active' && (
-          <p className="ops-queue__project-sub">Project {request.projectId.status}</p>
-        )}
+      <div className="ops-ticket__stock">
+        <StockBar requested={request.quantity} available={available} />
+        <span className="ops-ticket__nums">
+          <strong>{request.quantity}</strong>
+          <span className="ops-ticket__slash">/</span>
+          {available ?? '—'}
+        </span>
       </div>
 
-      <div className="ops-queue__cell ops-queue__requester">
-        <div
-          className="ops-person"
-          title={[requester?.email, requester?.department].filter(Boolean).join(' · ')}
+      <div className="ops-ticket__actions">
+        <button
+          type="button"
+          className="ui-btn ui-btn--quiet ui-btn--sm"
+          onClick={() => onReject(request)}
+          disabled={busy}
         >
-          <span className="ui-avatar ui-avatar--sm" aria-hidden="true">{initialsOf(requester?.name)}</span>
-          <div className="ops-person__text">
-            <p className="ops-person__name">{requester?.name || 'Unknown requester'}</p>
-            <p className="ops-person__sub">
-              {[requester?.department, requester?.semester ? `Sem ${requester.semester}` : null]
-                .filter(Boolean)
-                .join(' · ') || 'No department on file'}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="ops-queue__cell ops-queue__qty">
-        <div className="ops-qty">
-          <span className="ops-qty__now">{request.quantity}</span>
-        </div>
-        <p className={`ops-queue__avail ${short ? 'ops-queue__avail--short' : ''}`}>
-          {available == null ? 'stock unknown' : short ? `short by ${request.quantity - available}` : `${available} in stock`}
-        </p>
-      </div>
-
-      <div className="ops-queue__cell ops-queue__date">
-        {formatDay(request.createdAt)}
-        <br />
-        {formatTime(request.createdAt)}
-      </div>
-
-      <div className="ops-queue__cell ops-queue__status">
-        <span className={`ui-tag ${status.tag}`}>{status.label}</span>
-      </div>
-
-      <div className="ops-queue__actions">
-        {pending ? (
-          <>
-            <button
-              type="button"
-              className="ui-btn ui-btn--quiet ui-btn--sm"
-              onClick={() => onReject(request)}
-              disabled={busy}
-            >
-              Reject
-            </button>
-            <button
-              type="button"
-              className="ui-btn ui-btn--primary ui-btn--sm"
-              onClick={() => onApprove(request)}
-              disabled={busy}
-            >
-              {busy ? 'Approving…' : 'Approve'}
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            className="ui-btn ui-btn--quiet ui-btn--sm"
-            onClick={() => onOpen(request)}
-          >
-            View
-          </button>
-        )}
+          Reject
+        </button>
+        <button
+          type="button"
+          className="ui-btn ui-btn--primary ui-btn--sm"
+          onClick={() => onApprove(request)}
+          disabled={busy}
+        >
+          {busy ? 'Approving…' : 'Approve'}
+        </button>
       </div>
     </li>
   );
 }
-
-const isPending = (request: MaterialRequest) => request.status === 'pending';
 
 export default function MaterialRequests() {
   const { setPageLoading } = usePageLoading();
@@ -472,6 +542,19 @@ export default function MaterialRequests() {
     [visible],
   );
 
+  const pendingAll = useMemo(
+    () =>
+      requests
+        .filter(isPending)
+        .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()),
+    [requests],
+  );
+
+  const oldestWait = useMemo(
+    () => pendingAll.reduce((max, request) => Math.max(max, waitMs(request.createdAt)), 0),
+    [pendingAll],
+  );
+
   const resolvedRequests = useMemo(
     () =>
       visible
@@ -486,43 +569,25 @@ export default function MaterialRequests() {
     return resolvedRequests;
   }, [resolvedRequests, filter]);
 
-  const stats = useMemo(() => {
-    const pending = requests.filter(isPending);
-    const units = pending.reduce((sum, request) => sum + (request.quantity || 0), 0);
-    const oldest = pending.reduce<string | undefined>((value, request) => {
-      if (!request.createdAt) return value;
-      if (!value) return request.createdAt;
-      return new Date(request.createdAt) < new Date(value) ? request.createdAt : value;
-    }, undefined);
-    return {
-      pending: pending.length,
-      units,
-      oldest,
-      resolved: counts.approved + counts.rejected,
-    };
-  }, [requests, counts]);
-
   const showPending = filter === 'all' || filter === 'pending';
   const showResolvedSection = filter === 'all' || filter === 'approved' || filter === 'rejected';
   const isCollapsible = filter === 'all';
   const renderResolvedSection =
-    (filter === 'approved' || filter === 'rejected') || resolvedRequests.length > 0;
+    filter === 'approved' || filter === 'rejected' || resolvedRequests.length > 0;
 
   const filterLabel =
     filter === 'approved' ? 'Approved' : filter === 'rejected' ? 'Rejected' : 'Resolved';
 
   const hasSearch = query.trim().length > 0 || projectFilter !== 'all';
 
-  const shownCount =
-    filter === 'pending'
-      ? pendingRequests.length
-      : filter === 'approved' || filter === 'rejected'
-        ? resolvedForFilter.length
-        : pendingRequests.length + resolvedForFilter.length;
-
   const resetFilters = () => {
     setQuery('');
     setProjectFilter('all');
+  };
+
+  const toggleStage = (stage: Exclude<StatusFilter, 'all'>) => {
+    setFilter((current) => (current === stage ? 'all' : stage));
+    setShowResolved(false);
   };
 
   useEffect(() => {
@@ -538,21 +603,16 @@ export default function MaterialRequests() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [detail, approveTarget, rejectTarget]);
 
-  const closeOnBackdrop = (event: React.MouseEvent<HTMLDivElement>, close: () => void) => {
-    if (event.target === event.currentTarget) close();
-  };
-
   const approveStock = approveTarget?.inventoryItemId?.availableQuantity ?? 0;
   const approveShort = !!approveTarget && approveTarget.quantity > approveStock;
+  const detailStock = detail?.inventoryItemId?.availableQuantity;
+  const detailShort = detail != null && detailStock != null && detail.quantity > detailStock;
 
   return (
     <div className="ops-page">
-      <header className="ui-page-head">
+      <header className="ui-page-head ops-rise" style={rise(0)}>
         <div className="ui-page-head__text">
           <h1 className="ui-title">Material requests</h1>
-          <p className="ui-sub">
-            Component requests from project team leaders, queued for a decision.
-          </p>
         </div>
         <div className="ui-page-actions ops-head-tools">
           <div className="ui-search ops-search">
@@ -620,24 +680,21 @@ export default function MaterialRequests() {
         )}
 
         {loading ? (
-          <div className="ui-stack ui-stack--lg" aria-busy="true">
-            <div className="ops-skel-stats" aria-hidden="true">
-              {[0, 1, 2, 3].map((n) => (
-                <div className="ops-skel-stat" key={n}>
-                  <div className="ui-skel ops-skel-line ops-skel-line--value" />
+          <div className="ops-stack" aria-busy="true">
+            <div className="ops-console ops-console--skel" aria-hidden="true">
+              {[0, 1, 2].map((n) => (
+                <div className="ops-console__cell" key={n}>
                   <div className="ui-skel ops-skel-line ops-skel-line--sm" />
+                  <div className="ui-skel ops-skel-line ops-skel-line--value" />
+                  <div className="ui-skel ops-skel-line ops-skel-line--rail" />
                 </div>
               ))}
             </div>
-            <div className="ops-skel-toolbar" aria-hidden="true">
-              <div className="ui-skel ops-skel-line ops-skel-line--head" />
-              <div className="ui-skel ops-skel-line ops-skel-line--head" />
-            </div>
-            <div className="ui-panel">
+            <div className="ui-panel" aria-hidden="true">
               <header className="ui-panel__head">
                 <div className="ui-skel ops-skel-line ops-skel-line--head" />
               </header>
-              <div className="ops-skel-rows" aria-hidden="true">
+              <div className="ops-skel-rows">
                 {[0, 1, 2].map((n) => (
                   <div className="ops-skel-row" key={n}>
                     <div>
@@ -646,7 +703,6 @@ export default function MaterialRequests() {
                     </div>
                     <div className="ui-skel ops-skel-line ops-skel-line--wide" />
                     <div className="ui-skel ops-skel-line" />
-                    <div className="ui-skel ops-skel-line ops-skel-line--wide" />
                   </div>
                 ))}
               </div>
@@ -657,243 +713,217 @@ export default function MaterialRequests() {
           <div className="ui-empty">
             <span className="ui-empty__mark"><InboxIcon /></span>
             <p className="ui-empty__title">No material requests</p>
-            <p className="ui-empty__text">
-              When a project team leader requests a component from the store room, it arrives here for review.
-            </p>
+            <p className="ui-empty__text">Requests arrive here when a team leader draws from the store room.</p>
             <Link className="ui-btn ui-btn--quiet ui-btn--sm" to="/inventory">
               Open inventory
             </Link>
           </div>
         ) : requests.length > 0 ? (
           <>
-            <div className="ui-stats">
-              <div className="ui-stat ui-stat--accent">
-                <div className="ui-stat__value">{stats.pending}</div>
-                <div className="ui-stat__label">
-                  <span className="ops-live">
-                    <span className="ops-live__dot" aria-hidden="true" />
-                    Pending review
-                  </span>
+            <section className="ui-panel ui-panel--accent ops-rise" style={rise(1)} aria-labelledby="ops-pipeline-title">
+              <header className="ui-panel__head">
+                <div className="ui-panel__titles">
+                  <h2 className="ui-panel__title" id="ops-pipeline-title">Pipeline</h2>
+                  <span className="ui-panel__meta">{counts.all}</span>
                 </div>
-                <div className="ops-stat-foot">needs a decision</div>
-              </div>
-              <div className="ui-stat">
-                <div className="ui-stat__value">{stats.units}</div>
-                <div className="ui-stat__label">Units requested</div>
-                <div className="ops-stat-foot">across pending requests</div>
-              </div>
-              <div className="ui-stat">
-                <div className="ui-stat__value">{stats.pending ? waitingLabel(stats.oldest) : 'None'}</div>
-                <div className="ui-stat__label">Oldest waiting</div>
-                <div className="ops-stat-foot">since submission</div>
-              </div>
-              <div className="ui-stat">
-                <div className="ui-stat__value">{stats.resolved}</div>
-                <div className="ui-stat__label">Resolved</div>
-                <div className="ops-stat-foot">
-                  {counts.approved} approved · {counts.rejected} rejected
-                </div>
-              </div>
-            </div>
-
-            <div className="ops-toolbar">
-              <div className="ui-seg" role="group" aria-label="Filter requests by status">
-                {(['all', 'pending', 'approved', 'rejected'] as const).map((key) => (
+                <div className="ops-panel-tools">
+                  {filter !== 'all' && (
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn--quiet ui-btn--sm"
+                      onClick={() => {
+                        setFilter('all');
+                        setShowResolved(false);
+                      }}
+                    >
+                      All
+                    </button>
+                  )}
                   <button
-                    key={key}
                     type="button"
-                    aria-pressed={filter === key}
-                    onClick={() => {
-                      setFilter(key);
-                      if (key === 'all') setShowResolved(false);
-                    }}
+                    className="ui-icon-btn"
+                    aria-label="Refresh requests"
+                    title="Refresh"
+                    onClick={refresh}
+                    disabled={refreshing}
                   >
-                    {key !== 'all' && (
-                      <span className={`ops-seg__dot ops-seg__dot--${key}`} aria-hidden="true" />
-                    )}
-                    {key === 'all' ? 'All' : STATUS_META[key].label}
-                    <span className={`ops-seg__n ${filter === key ? 'ops-seg__n--on' : ''}`}>
-                      {counts[key]}
-                    </span>
+                    <RefreshIcon />
                   </button>
-                ))}
-              </div>
-              <div className="ops-toolbar__right">
-                {hasSearch && (
-                  <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={resetFilters}>
-                    Clear filters
-                  </button>
-                )}
-                <span className="ops-toolbar__note">
-                  {shownCount} of {requests.length} requests
-                </span>
-              </div>
-            </div>
+                </div>
+              </header>
 
-            {visible.length === 0 ? (
-              <div className="ui-empty">
-                <span className="ui-empty__mark"><SearchIcon /></span>
-                <p className="ui-empty__title">No requests match</p>
-                <p className="ui-empty__text">Nothing matches that search or project filter.</p>
-                <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={resetFilters}>
-                  Clear filters
-                </button>
+              <div className="ops-panel-body">
+                <div className="ops-funnel">
+                  {(['pending', 'approved', 'rejected'] as const).map((stage, index) => (
+                    <Stage
+                      key={stage}
+                      stage={stage}
+                      count={counts[stage]}
+                      total={counts.all}
+                      index={index}
+                      pressed={filter === stage}
+                      onToggle={() => toggleStage(stage)}
+                    />
+                  ))}
+                </div>
+
+                {pendingAll.length > 0 && <AgeRail requests={pendingAll} />}
               </div>
-            ) : (
-              <>
-                {showPending && (
-                  <section className="ui-panel ui-panel--accent">
-                    <header className="ui-panel__head">
-                      <div className="ui-panel__titles">
-                        <h2 className="ui-panel__title">Needs review</h2>
-                        <span className="ui-panel__meta">
-                          {pendingRequests.length} awaiting
-                          {pendingRequests.length > 0 ? ' · oldest first' : ''}
-                        </span>
-                      </div>
-                      <div className="ops-panel-tools">
+            </section>
+
+            {showPending && (
+              <section className="ops-region ops-rise" style={rise(2)} aria-labelledby="ops-review-title">
+                <header className="ops-region__head">
+                  <div className="ops-region__titles">
+                    <h2 className="ops-region__title" id="ops-review-title">Needs review</h2>
+                    <span className="ops-region__n">{pendingRequests.length}</span>
+                  </div>
+                  <div className="ops-region__tools">
+                    {hasSearch && (
+                      <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={resetFilters}>
+                        Clear filters
+                      </button>
+                    )}
+                  </div>
+                </header>
+
+                {pendingRequests.length > 0 ? (
+                  <ul className="ops-tickets">
+                    {pendingRequests.map((request) => (
+                      <Ticket
+                        key={request._id}
+                        request={request}
+                        ageFraction={oldestWait > 0 ? waitMs(request.createdAt) / oldestWait : 0}
+                        onOpen={openDetail}
+                        onApprove={openApprove}
+                        onReject={openReject}
+                        busy={actionLoading === request._id}
+                      />
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="ops-empty-wrap">
+                    <div className="ui-empty ui-empty--tight">
+                      <span className="ui-empty__mark"><InboxIcon /></span>
+                      <p className="ui-empty__title">Nothing waiting</p>
+                      <p className="ui-empty__text">
+                        {counts.pending > 0 && hasSearch
+                          ? 'No pending request matches the current filter.'
+                          : 'Every request has been reviewed.'}
+                      </p>
+                      {counts.pending > 0 && hasSearch ? (
+                        <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={resetFilters}>
+                          Clear filters
+                        </button>
+                      ) : resolvedRequests.length > 0 ? (
                         <button
                           type="button"
-                          className="ui-icon-btn"
-                          aria-label="Refresh requests"
-                          title="Refresh"
-                          onClick={refresh}
-                          disabled={refreshing}
+                          className="ui-btn ui-btn--quiet ui-btn--sm"
+                          onClick={() => setShowResolved(true)}
                         >
-                          <RefreshIcon />
+                          Review resolved
                         </button>
-                      </div>
-                    </header>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
 
-                    {pendingRequests.length > 0 ? (
-                      <ul className="ops-queue">
-                        {pendingRequests.map((request) => (
-                          <QueueRow
-                            key={request._id}
-                            request={request}
-                            onOpen={openDetail}
-                            onApprove={openApprove}
-                            onReject={openReject}
-                            busy={actionLoading === request._id}
-                          />
-                        ))}
+            {showResolvedSection && renderResolvedSection && (
+              <section className="ui-panel ops-rise" style={rise(3)} aria-labelledby="ops-resolved-title">
+                {isCollapsible ? (
+                  <button
+                    type="button"
+                    className="ops-disclosure"
+                    aria-expanded={showResolved}
+                    aria-controls="ops-resolved-body"
+                    onClick={() => setShowResolved((open) => !open)}
+                  >
+                    <span className="ops-disclosure__title" id="ops-resolved-title">{filterLabel}</span>
+                    <span className="ops-disclosure__n">{resolvedRequests.length}</span>
+                    <span className="ops-disclosure__mark"><ChevronIcon /></span>
+                  </button>
+                ) : (
+                  <header className="ui-panel__head">
+                    <div className="ui-panel__titles">
+                      <h2 className="ui-panel__title" id="ops-resolved-title">{filterLabel}</h2>
+                      <span className="ui-panel__meta">{resolvedForFilter.length}</span>
+                    </div>
+                    <div className="ops-panel-tools">
+                      <button
+                        type="button"
+                        className="ui-icon-btn"
+                        aria-label="Refresh requests"
+                        title="Refresh"
+                        onClick={refresh}
+                        disabled={refreshing}
+                      >
+                        <RefreshIcon />
+                      </button>
+                    </div>
+                  </header>
+                )}
+
+                {(!isCollapsible || showResolved) && (
+                  <div id="ops-resolved-body">
+                    {resolvedForFilter.length > 0 ? (
+                      <ul className="ui-rows ops-resolved">
+                        {resolvedForFilter.map((request) => {
+                          return (
+                            <li className="ui-row ops-resolved__row" key={request._id}>
+                              <button
+                                type="button"
+                                className="ops-row-open"
+                                aria-label={`Open ${request.status} request for ${request.quantity} of ${itemNameOf(request)}`}
+                                onClick={() => openDetail(request)}
+                              />
+                              <span className={`ops-mark ops-mark--${request.status}`} aria-hidden="true" />
+                              <div className="ui-row__main">
+                                <p className="ui-row__title">
+                                  {request.quantity} × {itemNameOf(request)}
+                                </p>
+                                <p className="ui-row__sub">
+                                  {request.projectId?.name || 'Unknown project'}
+                                  {request.requestedBy?.name ? ` · ${request.requestedBy.name}` : ''}
+                                </p>
+                              </div>
+                              <div className="ui-row__meta">
+                                <span className="ops-resolved__state">{STATUS_LABEL[request.status]}</span>
+                                <span className="ops-resolved__when">{formatDay(request.reviewedAt || request.createdAt)}</span>
+                              </div>
+                            </li>
+                          );
+                        })}
                       </ul>
                     ) : (
                       <div className="ops-empty-wrap">
-                        <div className="ui-empty">
+                        <div className="ui-empty ui-empty--tight">
                           <span className="ui-empty__mark"><InboxIcon /></span>
-                          <p className="ui-empty__title">No pending requests</p>
-                          <p className="ui-empty__text">
-                            {counts.pending > 0
-                              ? 'No pending requests match the current filters.'
-                              : 'Every request submitted by team leaders has been reviewed.'}
+                          <p className="ui-empty__title">
+                            No {filter === 'approved' ? 'approved' : 'rejected'} requests
                           </p>
-                          {counts.pending > 0 && hasSearch ? (
-                            <button
-                              type="button"
-                              className="ui-btn ui-btn--quiet ui-btn--sm"
-                              onClick={resetFilters}
-                            >
-                              Clear filters
-                            </button>
-                          ) : counts.all > 0 && filter === 'pending' ? (
-                            <button
-                              type="button"
-                              className="ui-btn ui-btn--quiet ui-btn--sm"
-                              onClick={() => setFilter('all')}
-                            >
-                              See resolved requests
-                            </button>
+                          {(filter === 'approved' ? counts.approved : counts.rejected) > 0 && hasSearch ? (
+                            <>
+                              <p className="ui-empty__text">None matches the current filter.</p>
+                              <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={resetFilters}>
+                                Clear filters
+                              </button>
+                            </>
                           ) : null}
                         </div>
                       </div>
                     )}
-                  </section>
+                  </div>
                 )}
-
-                {showResolvedSection && renderResolvedSection && (
-                  <section className="ui-panel">
-                    {isCollapsible ? (
-                      <button
-                        type="button"
-                        className="ops-disclosure"
-                        aria-expanded={showResolved}
-                        onClick={() => setShowResolved((open) => !open)}
-                      >
-                        <span>Resolved</span>
-                        <span className="ops-disclosure__n">{resolvedRequests.length}</span>
-                        <span className="ops-disclosure__mark"><ChevronIcon /></span>
-                      </button>
-                    ) : (
-                      <header className="ui-panel__head">
-                        <div className="ui-panel__titles">
-                          <h2 className="ui-panel__title">{filterLabel}</h2>
-                          <span className="ui-panel__meta">{resolvedForFilter.length}</span>
-                        </div>
-                        <div className="ops-panel-tools">
-                          <button
-                            type="button"
-                            className="ui-icon-btn"
-                            aria-label="Refresh requests"
-                            title="Refresh"
-                            onClick={refresh}
-                            disabled={refreshing}
-                          >
-                            <RefreshIcon />
-                          </button>
-                        </div>
-                      </header>
-                    )}
-
-                    {(!isCollapsible || showResolved) && (
-                      resolvedForFilter.length > 0 ? (
-                        <ul className="ops-queue ops-queue--resolved">
-                          {resolvedForFilter.map((request) => (
-                            <QueueRow
-                              key={request._id}
-                              request={request}
-                              onOpen={openDetail}
-                              onApprove={openApprove}
-                              onReject={openReject}
-                              busy={actionLoading === request._id}
-                            />
-                          ))}
-                        </ul>
-                      ) : (
-                        <div className="ops-empty-wrap">
-                          <div className="ui-empty">
-                            <span className="ui-empty__mark"><InboxIcon /></span>
-                            <p className="ui-empty__title">No {filter === 'approved' ? 'approved' : 'rejected'} requests</p>
-                            <p className="ui-empty__text">
-                              {(filter === 'approved' ? counts.approved : counts.rejected) > 0 && hasSearch
-                                ? `No ${filter === 'approved' ? 'approved' : 'rejected'} requests match the current filters.`
-                                : filter === 'approved'
-                                  ? 'Approved requests will collect here once stock is allocated.'
-                                  : 'Rejected requests and their reasons will collect here.'}
-                            </p>
-                            {(filter === 'approved' ? counts.approved : counts.rejected) > 0 && hasSearch && (
-                              <button
-                                type="button"
-                                className="ui-btn ui-btn--quiet ui-btn--sm"
-                                onClick={resetFilters}
-                              >
-                                Clear filters
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    )}
-                  </section>
-                )}
-              </>
+              </section>
             )}
           </>
         ) : null}
       </div>
 
       {detail && (
-        <div className="ui-overlay ops-overlay--drawer" onMouseDown={(event) => closeOnBackdrop(event, closeDetail)}>
+        <OpsOverlay className="ops-overlay--drawer" onClose={closeDetail}>
           <aside
             className="ops-drawer"
             role="dialog"
@@ -903,15 +933,14 @@ export default function MaterialRequests() {
             <header className="ui-modal__head">
               <div className="ui-grow">
                 <div className="ops-detail__head">
-                  <span className={`ui-tag ${STATUS_META[detail.status].tag}`}>
-                    {STATUS_META[detail.status].label}
-                  </span>
-                  <span className="ops-note">Requested {formatStamp(detail.createdAt)}</span>
+                  <span className={`ops-mark ops-mark--${detail.status}`} aria-hidden="true" />
+                  <span className="ops-detail__state">{STATUS_LABEL[detail.status]}</span>
+                  <span className="ops-detail__stamp">{formatStamp(detail.createdAt)}</span>
                 </div>
                 <h2 className="ops-drawer__title" id="ops-request-title">
                   {detail.quantity} × {itemNameOf(detail)}
                 </h2>
-                <p className="ops-modal__sub">{detail.projectId?.name || 'Unknown project'}</p>
+                <p className="ops-drawer__project">{detail.projectId?.name || 'Unknown project'}</p>
               </div>
               <button type="button" className="ui-icon-btn" aria-label="Close request" onClick={closeDetail} autoFocus>
                 <CloseIcon />
@@ -919,59 +948,73 @@ export default function MaterialRequests() {
             </header>
 
             <div className="ops-drawer__body">
+              <section className="ops-drawer__stock" aria-label="Stock">
+                <StockBar requested={detail.quantity} available={detail.inventoryItemId?.availableQuantity} size="md" />
+                <dl className="ops-stocknums">
+                  <div>
+                    <dt>Requested</dt>
+                    <dd>{detail.quantity}</dd>
+                  </div>
+                  <div>
+                    <dt>In stock</dt>
+                    <dd>{detail.inventoryItemId?.availableQuantity ?? '—'}</dd>
+                  </div>
+                  {detail.status === 'pending' && detailStock != null ? (
+                    <div>
+                      <Tooltip label="Deducted from the shelf once, on approval">
+                        <dt className="ops-stocknums__hint" tabIndex={0}>Left after</dt>
+                      </Tooltip>
+                      <dd className={detailShort ? 'is-short' : undefined}>
+                        {Math.max(0, detailStock - detail.quantity)}
+                      </dd>
+                    </div>
+                  ) : null}
+                </dl>
+              </section>
+
               <dl className="ops-facts">
-                <div>
+                <div className="ops-fact">
                   <dt className="ops-fact__label">Requested by</dt>
-                  <dd
-                    className="ops-fact__value"
-                    title={[detail.requestedBy?.email, detail.requestedBy?.department].filter(Boolean).join(' · ')}
-                  >
-                    {detail.requestedBy?.name || 'Unknown requester'}
+                  <dd className="ops-fact__value ops-fact__person">
+                    <span className="ui-avatar ui-avatar--sm" aria-hidden="true">
+                      {initialsOf(detail.requestedBy?.name)}
+                    </span>
+                    <span
+                      title={[detail.requestedBy?.email, detail.requestedBy?.department, detail.requestedBy?.semester ? `Sem ${detail.requestedBy.semester}` : null]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    >
+                      {detail.requestedBy?.name || 'Unknown requester'}
+                    </span>
                   </dd>
                 </div>
-                <div>
+                <div className="ops-fact">
                   <dt className="ops-fact__label">Project</dt>
                   <dd className="ops-fact__value">{detail.projectId?.name || 'Unknown project'}</dd>
                 </div>
-                <div>
-                  <dt className="ops-fact__label">Quantity</dt>
-                  <dd className="ops-fact__value ops-fact__value--num">{detail.quantity}</dd>
-                </div>
-                <div>
-                  <dt className="ops-fact__label">Available now</dt>
-                  <dd className="ops-fact__value">
-                    {detail.inventoryItemId?.availableQuantity != null
-                      ? `${detail.inventoryItemId.availableQuantity} of ${detail.inventoryItemId.totalQuantity ?? 'unknown'}`
-                      : 'Stock no longer listed'}
-                  </dd>
-                </div>
-                <div>
+                <div className="ops-fact">
                   <dt className="ops-fact__label">Category</dt>
-                  <dd className="ops-fact__value">{detail.inventoryItemId?.category || 'Not set'}</dd>
+                  <dd className="ops-fact__value">{detail.inventoryItemId?.category || '—'}</dd>
                 </div>
-                <div>
+                <div className="ops-fact">
                   <dt className="ops-fact__label">Location</dt>
-                  <dd className="ops-fact__value">{detail.inventoryItemId?.location || 'Not set'}</dd>
+                  <dd className="ops-fact__value">{detail.inventoryItemId?.location || '—'}</dd>
                 </div>
               </dl>
 
-              <section aria-labelledby="ops-detail-spec">
-                <h3 className="ops-section-label" id="ops-detail-spec">Specifications</h3>
-                {detail.specifications?.trim() ? (
-                  <p className="ops-quote">{detail.specifications}</p>
-                ) : (
-                  <p className="ops-note">No specifications were recorded.</p>
-                )}
-              </section>
-
-              <section aria-labelledby="ops-detail-reason">
-                <h3 className="ops-section-label" id="ops-detail-reason">Reason for request</h3>
-                {detail.reason?.trim() ? (
+              {detail.reason?.trim() ? (
+                <section aria-labelledby="ops-detail-reason">
+                  <h3 className="ops-section-label" id="ops-detail-reason">Reason</h3>
                   <p className="ops-quote">{detail.reason}</p>
-                ) : (
-                  <p className="ops-note">The team leader did not add a reason.</p>
-                )}
-              </section>
+                </section>
+              ) : null}
+
+              {detail.specifications?.trim() ? (
+                <section aria-labelledby="ops-detail-spec">
+                  <h3 className="ops-section-label" id="ops-detail-spec">Specifications</h3>
+                  <p className="ops-quote">{detail.specifications}</p>
+                </section>
+              ) : null}
 
               {(detail.imageUrl || detail.documentUrl) && (
                 <section aria-labelledby="ops-detail-files">
@@ -1016,45 +1059,33 @@ export default function MaterialRequests() {
 
               <section aria-labelledby="ops-detail-timeline">
                 <h3 className="ops-section-label" id="ops-detail-timeline">History</h3>
-                <ol className="ops-timeline">
-                  <li className="ops-timeline__step ops-timeline__step--done">
-                    <span className="ops-timeline__dot" aria-hidden="true" />
-                    <div>
-                      <p className="ops-timeline__title">Submitted</p>
-                      <p className="ops-timeline__sub">
-                        {formatStamp(detail.createdAt)}
-                        {detail.requestedBy?.name ? ` · ${detail.requestedBy.name}` : ''}
-                      </p>
-                    </div>
+                <ol className="ops-steps">
+                  <li className="ops-step is-done">
+                    <span className="ops-step__dot" aria-hidden="true" />
+                    <span className="ops-step__label">Submitted</span>
+                    <span className="ops-step__when">
+                      {formatStamp(detail.createdAt)}
+                      {detail.requestedBy?.name ? ` · ${detail.requestedBy.name}` : ''}
+                    </span>
                   </li>
-                  {detail.status === 'pending' ? (
-                    <li className="ops-timeline__step">
-                      <span className="ops-timeline__dot" aria-hidden="true" />
-                      <div>
-                        <p className="ops-timeline__title">Awaiting review</p>
-                        <p className="ops-timeline__sub">With the project admin</p>
-                      </div>
-                    </li>
-                  ) : (
-                    <li
-                      className={`ops-timeline__step ops-timeline__step--done ${
-                        detail.status === 'approved'
-                          ? 'ops-timeline__step--positive'
-                          : 'ops-timeline__step--negative'
-                      }`}
-                    >
-                      <span className="ops-timeline__dot" aria-hidden="true" />
-                      <div>
-                        <p className="ops-timeline__title">
-                          {detail.status === 'approved' ? 'Approved and allocated' : 'Rejected'}
-                        </p>
-                        <p className="ops-timeline__sub">
-                          {formatStamp(detail.reviewedAt)}
-                          {detail.reviewedBy?.name ? ` · ${detail.reviewedBy.name}` : ''}
-                        </p>
-                      </div>
-                    </li>
-                  )}
+                  <li
+                    className={`ops-step${detail.status === 'pending' ? ' is-waiting' : ' is-done'}`}
+                    data-status={detail.status}
+                  >
+                    <span className="ops-step__dot" aria-hidden="true" />
+                    <span className="ops-step__label">
+                      {detail.status === 'pending'
+                        ? 'Awaiting review'
+                        : detail.status === 'approved'
+                          ? 'Approved'
+                          : 'Rejected'}
+                    </span>
+                    <span className="ops-step__when">
+                      {detail.status === 'pending'
+                        ? 'With the project admin'
+                        : `${formatStamp(detail.reviewedAt)}${detail.reviewedBy?.name ? ` · ${detail.reviewedBy.name}` : ''}`}
+                    </span>
+                  </li>
                 </ol>
               </section>
             </div>
@@ -1076,11 +1107,11 @@ export default function MaterialRequests() {
               )}
             </footer>
           </aside>
-        </div>
+        </OpsOverlay>
       )}
 
       {approveTarget && (
-        <div className="ui-overlay" onMouseDown={(event) => closeOnBackdrop(event, closeApprove)}>
+        <OpsOverlay onClose={closeApprove}>
           <div
             className="ui-modal ui-modal--narrow"
             role="dialog"
@@ -1090,33 +1121,34 @@ export default function MaterialRequests() {
             <header className="ui-modal__head">
               <div>
                 <h2 className="ui-h2" id="ops-approve-title">Approve request</h2>
-                <p className="ops-modal__sub">{itemNameOf(approveTarget)}</p>
+                <p className="ops-modal__sub">
+                  {approveTarget.quantity} × {itemNameOf(approveTarget)} ·{' '}
+                  {approveTarget.projectId?.name || 'Unknown project'}
+                </p>
               </div>
               <button type="button" className="ui-icon-btn" aria-label="Close" onClick={closeApprove} autoFocus>
                 <CloseIcon />
               </button>
             </header>
             <div className="ui-modal__body">
-              <div className="ui-stack ui-stack--sm">
-                <div className="ops-callout">
-                  <p className="ops-callout__title">
-                    {approveTarget.quantity} × {itemNameOf(approveTarget)} for{' '}
-                    {approveTarget.projectId?.name || 'this project'}
-                  </p>
-                  <p className="ops-callout__sub">
-                    Requested by {approveTarget.requestedBy?.name || 'unknown requester'} ·{' '}
-                    {formatStamp(approveTarget.createdAt)}
-                  </p>
-                </div>
-
-                <dl className="ops-facts">
+              <div className="ops-stack">
+                <StockBar requested={approveTarget.quantity} available={approveTarget.inventoryItemId?.availableQuantity} size="md" />
+                <dl className="ops-stocknums">
                   <div>
-                    <dt className="ops-fact__label">Requested</dt>
-                    <dd className="ops-fact__value ops-fact__value--num">{approveTarget.quantity}</dd>
+                    <dt>Requested</dt>
+                    <dd>{approveTarget.quantity}</dd>
                   </div>
                   <div>
-                    <dt className="ops-fact__label">Available now</dt>
-                    <dd className="ops-fact__value ops-fact__value--num">{approveStock}</dd>
+                    <dt>In stock</dt>
+                    <dd>{approveTarget.inventoryItemId?.availableQuantity ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <Tooltip label="Deducted from the shelf once, on approval">
+                      <dt className="ops-stocknums__hint" tabIndex={0}>Left after</dt>
+                    </Tooltip>
+                    <dd className={approveShort ? 'is-short' : undefined}>
+                      {Math.max(0, approveStock - approveTarget.quantity)}
+                    </dd>
                   </div>
                 </dl>
 
@@ -1125,12 +1157,15 @@ export default function MaterialRequests() {
                     Requested quantity ({approveTarget.quantity}) exceeds currently available stock (
                     {approveStock}). Do you still wish to attempt approval?
                   </div>
-                ) : (
-                  <p className="ops-note">
-                    This deducts {approveTarget.quantity} from available stock once and allocates it to{' '}
-                    {approveTarget.projectId?.name || 'the project'}.
-                  </p>
-                )}
+                ) : null}
+
+                <div className="ops-approve__who">
+                  <span className="ui-avatar ui-avatar--sm" aria-hidden="true">
+                    {initialsOf(approveTarget.requestedBy?.name)}
+                  </span>
+                  <span>{approveTarget.requestedBy?.name || 'Unknown requester'}</span>
+                  <span className="ops-approve__stamp">{formatStamp(approveTarget.createdAt)}</span>
+                </div>
 
                 {approveError && (
                   <div className="ui-notice ui-notice--error" role="alert">{approveError}</div>
@@ -1155,11 +1190,11 @@ export default function MaterialRequests() {
               </button>
             </footer>
           </div>
-        </div>
+        </OpsOverlay>
       )}
 
       {rejectTarget && (
-        <div className="ui-overlay" onMouseDown={(event) => closeOnBackdrop(event, closeReject)}>
+        <OpsOverlay onClose={closeReject}>
           <div
             className="ui-modal ui-modal--narrow"
             role="dialog"
@@ -1179,9 +1214,6 @@ export default function MaterialRequests() {
             </header>
             <form onSubmit={handleReject}>
               <div className="ui-modal__body">
-                <p className="ops-note">
-                  Give a clear reason. It is shown to the team leader in their project history.
-                </p>
                 <div className="ops-form-error">
                   <label className="ui-label" htmlFor="ops-reject-reason">Reason for rejection</label>
                   <textarea
@@ -1193,6 +1225,7 @@ export default function MaterialRequests() {
                     placeholder="What should the team leader change or provide?"
                     required
                   />
+                  <p className="ui-hint">Shown to the team leader in their project history.</p>
                 </div>
                 {rejectError && (
                   <div className="ui-notice ui-notice--error ops-form-error" role="alert">
@@ -1219,7 +1252,7 @@ export default function MaterialRequests() {
               </footer>
             </form>
           </div>
-        </div>
+        </OpsOverlay>
       )}
     </div>
   );

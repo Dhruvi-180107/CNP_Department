@@ -28,16 +28,18 @@ export const NAV_GROUPS: { id: string; label: string; items: string[] }[] = [
   { id: 'account',     label: 'Account',     items: ['profile'] },
 ];
 
-/* Line icons (24px grid, 1.7 stroke) so the graphite rail stays crisp. */
+/* Line icons on the 24px grid, drawn inside a common 4–20 optical square so
+   the 18px render leaves the same margin on every glyph: a wide building and a
+   tall bell sit on one axis. Stroke 1.7 for the crisp rail. */
 export const NAV_ICON_PATHS: Record<string, string> = {
   dashboard: 'M4 13h7V4H4v9Zm9 7h7V11h-7v9ZM4 20h7v-5H4v5ZM13 9h7V4h-7v5Z',
-  clubs: 'M3 10 12 4l9 6M5 10v8m4-8v8m6-8v8m4-8v8M3 20h18',
-  projects: 'M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1ZM6 6h12a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Zm3 6h6m-6 4h4',
-  events: 'M5 6h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Zm-1 5h16M8 3v4m8-4v4',
-  notifications: 'M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4',
+  clubs: 'M4 10 12 4l8 6M6 10v8m4-8v8m4-8v8m4-8v8M4 20h16',
+  projects: 'M9 5h6a1 1 0 0 1 1 1v1H8V6a1 1 0 0 1 1-1ZM5 7h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Zm4 4.5h6m-6 3.5h4',
+  events: 'M5 6h14a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Zm-1 4.5h16M8 4v3.5m8-3.5v3.5',
+  notifications: 'M17.5 10a5.5 5.5 0 0 0-11 0c0 5-2 5-2 7h15c0-2-2-2-2-7ZM10.5 20.5h3',
   inventory: 'm4 8 8-4 8 4-8 4-8-4Zm0 0v8l8 4m8-12v8l-8 4m0-8v8',
-  requests: 'M4 5h2l2 10h9l2-7H7M10 20h.01M17 20h.01',
-  profile: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0',
+  requests: 'M4 13h4l1.5 3h5L16 13h4M4 13V6.5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1V13M4 13v4.5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V13',
+  profile: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4.5 20a7.5 7.5 0 0 1 15 0',
 };
 
 export function NavIcon({ id, className = 'rail-icon' }: { id: string; className?: string }) {

@@ -1,6 +1,8 @@
 import { useState, useEffect, useId, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../../services/api';
+import { KindGlyph } from '../ui/vis';
+import { initialsOf, roleKind, roleLabel } from '../../pages/Profile/labels';
 import '../../pages/Profile/profile.css';
 
 export interface UserOption {
@@ -47,21 +49,28 @@ const ROLE_DEFAULTS: Record<UserSelectProps['role'], { placeholder: string; empt
 
 const FALLBACK_DEFAULTS = { placeholder: 'Search users...', emptyMessage: 'No users found' };
 
-function initialsOf(name: string) {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map(part => part.charAt(0).toUpperCase())
-    .join('');
-}
-
 function personMeta(user: UserOption) {
   return [
     user.enrollmentNumber ? `Enrollment: ${user.enrollmentNumber}` : '',
     user.department || '',
     user.semester ? `Semester ${user.semester}` : '',
   ].filter(Boolean) as string[];
+}
+
+/** One line for the row: the facts you scan by, not the ones you look up. */
+function personLine(user: UserOption) {
+  return [
+    user.email,
+    user.department || '',
+    user.semester ? `Sem ${user.semester}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** The full record, kept on hover for the fields the row has no space for. */
+function personTitle(user: UserOption) {
+  return [user.email, ...personMeta(user)].filter(Boolean).join(' · ');
 }
 
 export function UserSelect({
@@ -262,8 +271,6 @@ export function UserSelect({
     return disabledReason;
   };
 
-  const selectedMeta = selectedUser ? personMeta(selectedUser) : [];
-
   return (
     <div ref={containerRef} className="prf-usel">
       {label && (
@@ -298,18 +305,18 @@ export function UserSelect({
                 )}
               </span>
               <span className="prf-usel__text">
-                <span className="prf-usel__name">{selectedUser.name}</span>
-                <span className="prf-usel__sub">{selectedUser.email}</span>
-                {selectedMeta.length > 0 && (
-                  <span className="prf-usel__sub">
-                    {selectedMeta.map((item, index) => (
-                      <span key={item}>
-                        {index > 0 && <span className="prf-sep" aria-hidden="true">·</span>}
-                        {item}
-                      </span>
-                    ))}
-                  </span>
-                )}
+                <span className="prf-usel__head">
+                  <span className="prf-usel__name">{selectedUser.name}</span>
+                  {selectedUser.role && (
+                    <span className="ui-tag ui-tag--plain prf-usel__role">
+                      <KindGlyph kind={roleKind(selectedUser.role)} size={11} />
+                      {roleLabel(selectedUser.role)}
+                    </span>
+                  )}
+                </span>
+                <span className="prf-usel__sub" title={personTitle(selectedUser)}>
+                  {personLine(selectedUser)}
+                </span>
               </span>
             </>
           ) : (
@@ -406,7 +413,6 @@ export function UserSelect({
                 const isAssigned = disabledUserIds.includes(user._id);
                 const isSelected = user._id === value;
                 const isHighlighted = idx === highlightedIndex;
-                const meta = personMeta(user);
 
                 return (
                   <div
@@ -427,18 +433,18 @@ export function UserSelect({
                     </span>
 
                     <span className="prf-usel__option-text">
-                      <span className="prf-usel__name">{user.name}</span>
-                      <span className="prf-usel__sub">{user.email}</span>
-                      {meta.length > 0 && (
-                        <span className="prf-usel__sub">
-                          {meta.map((item, index) => (
-                            <span key={item}>
-                              {index > 0 && <span className="prf-sep" aria-hidden="true">·</span>}
-                              {item}
-                            </span>
-                          ))}
-                        </span>
-                      )}
+                      <span className="prf-usel__head">
+                        <span className="prf-usel__name">{user.name}</span>
+                        {user.role && (
+                          <span className="ui-tag ui-tag--plain prf-usel__role">
+                            <KindGlyph kind={roleKind(user.role)} size={11} />
+                            {roleLabel(user.role)}
+                          </span>
+                        )}
+                      </span>
+                      <span className="prf-usel__sub" title={personTitle(user)}>
+                        {personLine(user)}
+                      </span>
                     </span>
 
                     {isAssigned ? (

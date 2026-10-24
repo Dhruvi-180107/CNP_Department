@@ -1,4 +1,6 @@
 import { isEventPast } from '../../eventDate';
+import { DateTile } from '../ui/vis';
+import { EventCrest } from './EventCrest';
 import '../../pages/Events/events.css';
 
 export interface EventCardProps {
@@ -11,9 +13,9 @@ export interface EventCardProps {
 }
 
 /**
- * One event as a compact object: date block, title, club, time and venue, with
- * the status tag giving way to the manage actions on hover. Used by the
- * dashboards and the club detail page.
+ * One event as a compact ticket: a date plate with its start time, the club
+ * crest and name, the title, venue as a mark, and the status tag giving way to
+ * the manage actions on hover. Used by the dashboards and the club detail page.
  */
 export function EventCard({
   event,
@@ -48,15 +50,6 @@ export function EventCard({
       })
     : '';
 
-  const monthLabel = isValidDate ? eventDateObj.toLocaleDateString(undefined, { month: 'short' }) : 'TBD';
-  const dayLabel = isValidDate ? String(eventDateObj.getDate()) : '—';
-  const weekdayLabel = isValidDate
-    ? eventDateObj.toLocaleDateString(undefined, { weekday: 'short' })
-    : '';
-  const whenLabel = isValidDate
-    ? `${weekdayLabel} · ${formattedTime}`
-    : formattedDate;
-
   const hasActions = canManage && (Boolean(onEdit) || Boolean(onDelete));
 
   return (
@@ -65,22 +58,21 @@ export function EventCard({
       className={`evt-card${eventIsPast ? ' is-past' : ''}${compact ? ' evt-card--compact' : ''}`}
       aria-label={`${event.title}, ${clubName}, ${formattedDate}${formattedTime ? ` at ${formattedTime}` : ''}`}
     >
-      <div className="evt-dateblock" aria-hidden="true">
-        <span className="evt-dateblock__m">{monthLabel}</span>
-        <span className="evt-dateblock__d">{dayLabel}</span>
+      <div className="evt-card__stub">
+        {isValidDate ? (
+          <DateTile date={eventDateObj} size={compact ? 'sm' : 'md'} />
+        ) : (
+          <span className="evt-card__tbd" aria-hidden="true">
+            TBD
+          </span>
+        )}
+        {isValidDate && <span className="evt-card__time">{formattedTime}</span>}
       </div>
 
       <div className="evt-card__main">
         <div className="evt-card__top">
           <p className="evt-card__club">
-            {clubLogo ? (
-              <img className="evt-card__logo" src={clubLogo} alt="" />
-            ) : (
-              <svg className="evt-i evt-i--xs" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 20v-1.4A4.6 4.6 0 0 1 8.6 14h6.8A4.6 4.6 0 0 1 20 18.6V20" />
-                <circle cx="12" cy="7.8" r="3.6" />
-              </svg>
-            )}
+            <EventCrest name={clubName} logo={clubLogo} size={18} />
             <span>{clubName}</span>
           </p>
 
@@ -122,15 +114,8 @@ export function EventCard({
 
         <h3 className="evt-card__title">{event.title}</h3>
 
-        <p className="evt-card__meta">
-          <span>
-            <svg className="evt-i evt-i--xs" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="12" r="8.5" />
-              <path d="M12 7.5V12l3 2" />
-            </svg>
-            {isValidDate ? whenLabel : formattedDate}
-          </span>
-          {event.location && (
+        {event.location && (
+          <p className="evt-card__meta">
             <span>
               <svg className="evt-i evt-i--xs" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 20.5s6.2-5.1 6.2-9.7a6.2 6.2 0 1 0-12.4 0c0 4.6 6.2 9.7 6.2 9.7Z" />
@@ -138,8 +123,8 @@ export function EventCard({
               </svg>
               <span className="ui-truncate">{event.location}</span>
             </span>
-          )}
-        </p>
+          </p>
+        )}
 
         {!compact && event.description && <p className="evt-card__desc">{event.description}</p>}
 

@@ -1,11 +1,20 @@
+import { useMemo } from 'react';
+import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
+import { Counter, GridBg, Segments } from '../../components/ui/vis';
+import { Tooltip } from '../../components/ui/Tooltip';
 import {
-  DashAvatar,
   DashEmpty,
+  DashIcon,
   DashLoadError,
   DashNotifications,
-  DashStat,
+  ageInDays,
+  fmtDay,
   fmtShortDay,
+  parseDate,
+  riseStyle,
+  shortAge,
+  spokenAge,
 } from './StaffBits';
 
 interface MentorDashboardProps {
@@ -21,9 +30,20 @@ const statusTone = (status: string) => {
   return '';
 };
 
+function initials(name: string): string {
+  return (name || '?')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word.charAt(0).toUpperCase())
+    .join('');
+}
+
 /**
- * Faculty mentor — the projects they mentor. A calm, read-only reading of
- * status, team leadership and recency; no destructive controls live here.
+ * Faculty mentor — the constellation. A calm, read-only field of project nodes:
+ * the team leader sits on the orbit, status is a lit mark, and recency is a real
+ * 14-day rail under each name. No primary button, no destructive control, one
+ * slow ambient pulse on the most recently touched project.
  */
 export function MentorDashboard({ mentorProjects, unread, loadError, onReload }: MentorDashboardProps) {
   const entries = mentorProjects.filter((entry) => entry && entry.project);
@@ -39,29 +59,34 @@ export function MentorDashboard({ mentorProjects, unread, loadError, onReload }:
     .filter(Boolean)
     .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0];
 
-  const denominator = projects.length || 1;
+  const latestId = useMemo(() => {
+    let latest: { id: string; time: number } | null = null;
+    for (const project of projects) {
+      const date = parseDate(project.updatedAt);
+      if (!date) continue;
+      if (!latest || date.getTime() > latest.time) latest = { id: project._id, time: date.getTime() };
+    }
+    return latest?.id ?? null;
+  }, [projects]);
+
+  // MOCK: node recency rails plot each project's real updatedAt inside a 14-day
+  // window; the payload carries no time series, so no sparkline is invented.
+
   const rows = [
-    { key: 'active', label: 'Active', count: active, fill: 'dash-dist__fill--active' },
-    { key: 'completed', label: 'Completed', count: completed, fill: 'dash-dist__fill--done' },
-    { key: 'inactive', label: 'Inactive', count: inactive, fill: 'dash-dist__fill--off' },
+    { key: 'active', label: 'Active', count: active },
+    { key: 'completed', label: 'Completed', count: completed },
+    { key: 'inactive', label: 'Inactive', count: inactive },
   ];
 
   return (
-    <div className="dash">
+    <div className="dash dash--constellation">
       <header className="ui-page-head">
         <div className="ui-page-head__text">
           <h1 className="ui-title">Projects I mentor</h1>
-          <p className="ui-sub">
-            {projects.length
-              ? `${projects.length} GUIITAR project${
-                  projects.length === 1 ? '' : 's'
-                }, ${active} active. You are the primary mentor on ${primaryCount}.`
-              : 'No projects are assigned to you yet.'}
-          </p>
         </div>
         <div className="ui-page-actions">
           <DashNotifications count={unread} />
-          <Link to="/projects" className="ui-btn ui-btn--quiet">
+          <Link to="/projects" className="ui-btn ui-btn--ghost">
             All projects
           </Link>
         </div>
@@ -69,142 +94,184 @@ export function MentorDashboard({ mentorProjects, unread, loadError, onReload }:
 
       {loadError ? <DashLoadError message={loadError} onRetry={onReload} /> : null}
 
-      <div className="ui-stats">
-        <DashStat value={projects.length} label="Projects mentored" />
-        <DashStat value={active} label="Active" />
-        <DashStat value={completed} label="Completed" />
-        <DashStat value={primaryCount} label="As primary mentor" />
-      </div>
+      {entries.length ? (
+        <>
+          <section
+            className="dash-const dash-rise"
+            aria-label={`${projects.length} mentored projects`}
+            style={riseStyle(0)}
+          >
+            <GridBg className="dash-const__grid" />
 
-      <div className="dash-split dash-split--8">
-        <section className="ui-panel ui-panel--accent" aria-labelledby="fm-projects-title">
-          <header className="ui-panel__head">
-            <div className="ui-panel__titles">
-              <h2 className="ui-panel__title" id="fm-projects-title">
-                Mentored projects
-              </h2>
-              <span className="ui-panel__meta">
-                {projects.length} project{projects.length === 1 ? '' : 's'}
-              </span>
-            </div>
-            <Link to="/projects" className="ui-btn ui-btn--quiet ui-btn--sm">
-              Browse projects
-            </Link>
-          </header>
+            <ol className="dash-const__field">
+              {entries.map((entry, index) => {
+                const project = entry.project;
+                const leader =
+                  project.teamLeaderId && typeof project.teamLeaderId === 'object'
+                    ? project.teamLeaderId
+                    : null;
+                const updated = project.updatedAt;
+                const days = ageInDays(updated);
+                const position = days === null ? 1 : Math.max(0, Math.min(1, 1 - days / 14));
+                return (
+                  <li
+                    className={`dash-node${
+                      project._id === latestId ? ' dash-node--live' : ''
+                    }`}
+                    key={entry.assignmentId || project._id}
+                    style={{ '--dash-i': index } as CSSProperties}
+                  >
+                    <Link
+                      to={`/projects/${project._id}`}
+                      className="dash-node__link"
+                      aria-label={`${project.name}, ${project.status || 'status unknown'}`}
+                    />
 
-          <div className="ui-panel__body ui-panel__body--flush">
-            {entries.length ? (
-              <ul className="ui-rows">
-                {entries.map((entry) => {
-                  const project = entry.project;
-                  const leader =
-                    project.teamLeaderId && typeof project.teamLeaderId === 'object'
-                      ? project.teamLeaderId
-                      : null;
-                  return (
-                    <li className="ui-row" key={entry.assignmentId || project._id}>
-                      <DashAvatar name={project.name} src={project.image} />
-                      <div className="ui-row__main">
-                        <p className="ui-row__title">
-                          <Link to={`/projects/${project._id}`} className="dash-link">
-                            {project.name}
-                          </Link>
-                        </p>
-                        <p className="ui-row__sub">
-                          {leader ? `Team led by ${leader.name}` : 'No team leader assigned'}
-                          {project.updatedAt ? ` · updated ${fmtShortDay(project.updatedAt)}` : ''}
-                        </p>
-                        {project.description ? (
-                          <p className="ui-row__sub dash-clamp">{project.description}</p>
-                        ) : null}
-                      </div>
-                      <div className="ui-row__meta">
-                        <span className={`ui-tag dash-status ${statusTone(project.status)}`}>
-                          {project.status || 'Unknown'}
-                        </span>
-                        {entry.isPrimary ? (
-                          <span className="ui-tag ui-tag--plain is-accent">Primary</span>
+                    <span className="dash-node__orbit" aria-hidden="true">
+                      <span className="dash-node__plate">
+                        {project.image ? (
+                          <img src={project.image} alt="" />
                         ) : (
-                          <span className="ui-tag ui-tag--plain">Secondary</span>
+                          initials(project.name)
                         )}
-                      </div>
-                      <div className="ui-row__actions">
-                        <Link
-                          to={`/projects/${project._id}`}
-                          className="ui-btn ui-btn--quiet ui-btn--sm"
+                      </span>
+                      <span className={`dash-node__status ${statusTone(project.status)}`} />
+                      {leader ? (
+                        <span
+                          className="dash-node__leader"
+                          role="img"
+                          aria-label={`Team led by ${leader.name}`}
+                          title={`Team led by ${leader.name}`}
                         >
-                          Open project
-                        </Link>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <div className="ui-panel__body">
-                <DashEmpty
-                  icon="ops"
-                  title="No projects assigned"
-                  text="A project admin assigns faculty mentors. Projects you mentor will appear here."
-                />
-              </div>
-            )}
-          </div>
-
-          <footer className="ui-panel__foot">
-            <span className="dash-foot-text">Join requests are reviewed on each project page</span>
-            <Link to="/projects" className="ui-btn ui-btn--ghost ui-btn--sm">
-              All projects
-            </Link>
-          </footer>
-        </section>
-
-        <aside className="dash-col" aria-label="Mentorship summary">
-          <section className="ui-panel" aria-labelledby="fm-status-title">
-            <header className="ui-panel__head">
-              <div className="ui-panel__titles">
-                <h2 className="ui-panel__title" id="fm-status-title">
-                  Status split
-                </h2>
-                {since ? <span className="ui-panel__meta">Since {fmtShortDay(since)}</span> : null}
-              </div>
-            </header>
-            <div className="ui-panel__body">
-              <div className="dash-dist">
-                {rows.map((row) => (
-                  <div className="dash-dist__row" key={row.key}>
-                    <span className="dash-dist__label">{row.label}</span>
-                    <span className="ui-meter dash-dist__track" aria-hidden="true">
-                      <span
-                        className={`ui-meter__fill ${row.fill}`}
-                        style={{ transform: `scaleX(${row.count / denominator})` }}
-                      />
+                          {leader.profileImage ? (
+                            <img src={leader.profileImage} alt="" />
+                          ) : (
+                            initials(leader.name)
+                          )}
+                          <span className="dash-node__lead" aria-hidden="true">
+                            <DashIcon name="lead" size={9} />
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="dash-node__leader is-empty" title="No team leader">
+                          <DashIcon name="users" size={11} />
+                        </span>
+                      )}
                     </span>
-                    <span className="dash-dist__value">{row.count}</span>
-                  </div>
-                ))}
-              </div>
 
-              <hr className="ui-divider" />
+                    <span className="dash-node__name">{project.name}</span>
 
-              <div className="dash-aside-block">
-                <div className="ui-between">
-                  <span className="dash-at">Teams with a leader</span>
-                  <span className="dash-cover__value">
-                    {withLeader} / {projects.length}
-                  </span>
-                </div>
-                <span className="ui-meter" aria-hidden="true">
-                  <span
-                    className="ui-meter__fill"
-                    style={{ transform: `scaleX(${withLeader / denominator})` }}
-                  />
-                </span>
-              </div>
-            </div>
+                    <span className="dash-node__tags">
+                      <span className={`ui-tag dash-status ${statusTone(project.status)}`}>
+                        {project.status || 'Unknown'}
+                      </span>
+                      <span className={`ui-tag ui-tag--plain${entry.isPrimary ? ' is-accent' : ''}`}>
+                        {entry.isPrimary ? 'Primary' : 'Secondary'}
+                      </span>
+                    </span>
+
+                    <Tooltip label={`Updated ${fmtDay(updated)}`}>
+                      <span
+                        className="dash-recency"
+                        role="img"
+                        aria-label={`Last update ${spokenAge(updated)}`}
+                        tabIndex={0}
+                      >
+                        <span className="dash-recency__track" aria-hidden="true">
+                          {Array.from({ length: 14 }, (_, tick) => (
+                            <span className="dash-recency__tick" key={tick} />
+                          ))}
+                          <span
+                            className="dash-recency__marker"
+                            style={{ '--dash-pos': position } as CSSProperties}
+                          />
+                        </span>
+                        <span className="dash-recency__age">{shortAge(updated)}</span>
+                      </span>
+                    </Tooltip>
+                  </li>
+                );
+              })}
+            </ol>
           </section>
-        </aside>
-      </div>
+
+          <section
+            className="dash-status-band dash-rise"
+            aria-labelledby="fm-status-title"
+            style={riseStyle(1)}
+          >
+            <div className="dash-status-band__head">
+              <h2 className="dash-region__title" id="fm-status-title">
+                Status
+              </h2>
+              <span className="dash-region__n">
+                <Counter value={projects.length} />
+              </span>
+              {since ? <span className="dash-at">since {fmtShortDay(since)}</span> : null}
+              <span className="dash-region__spacer" />
+              <Tooltip label={`${withLeader} of ${projects.length} teams have a leader`}>
+                <span className="dash-status-band__leaders" tabIndex={0}>
+                  <span className="dash-status-band__leaders-glyph" aria-hidden="true">
+                    <DashIcon name="users" size={13} />
+                  </span>
+                  <Segments
+                    value={withLeader}
+                    total={projects.length}
+                    segments={Math.max(projects.length, 3)}
+                    ariaLabel={`${withLeader} of ${projects.length} teams have a leader`}
+                  />
+                  <span className="dash-status-band__leaders-n" aria-hidden="true">
+                    {withLeader}/{projects.length}
+                  </span>
+                </span>
+              </Tooltip>
+            </div>
+
+            {projects.length ? (
+              <div
+                className="dash-proportion"
+                role="img"
+                aria-label={`${projects.length} projects: ${active} active, ${completed} completed, ${inactive} inactive`}
+              >
+                {rows.map((row) =>
+                  row.count > 0 ? (
+                    <span
+                      className="dash-proportion__block"
+                      key={row.key}
+                      data-status={row.key}
+                      style={{ '--dash-w': row.count } as CSSProperties}
+                    />
+                  ) : null,
+                )}
+              </div>
+            ) : null}
+
+            <ul className="dash-status-key">
+              {rows.map((row) => (
+                <li key={row.key} className="dash-status-key__item">
+                  <span className="dash-status-key__swatch" data-status={row.key} aria-hidden="true" />
+                  <span className="dash-status-key__label">{row.label}</span>
+                  <span className="dash-status-key__n">
+                    <Counter value={row.count} />
+                  </span>
+                </li>
+              ))}
+              <li className="dash-status-key__item is-quiet">
+                <span className="dash-status-key__label">Primary mentor</span>
+                <span className="dash-status-key__n">
+                  <Counter value={primaryCount} />
+                </span>
+              </li>
+            </ul>
+          </section>
+        </>
+      ) : (
+        <DashEmpty
+          icon="ops"
+          title="No projects assigned"
+          text="A project admin assigns faculty mentors."
+        />
+      )}
     </div>
   );
 }

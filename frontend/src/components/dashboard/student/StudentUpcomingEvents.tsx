@@ -1,146 +1,120 @@
 import { Link } from 'react-router-dom';
+import { Ring } from '../../ui/vis';
 import { DashboardSection, PanelError } from './DashboardSection';
 import {
-  asEvent,
   calendarDaysUntil,
+  closenessFor,
+  clubLogoOf,
   clubNameOf,
   countdownFor,
   eventDateValue,
   formatClock,
-  formatDayMonth,
+  formatCompactDate,
   formatDayNumber,
   formatMonthShort,
   formatWeekday,
-  sortEvents,
+  initialsOf,
   type StudentEvent,
 } from './studentUtils';
-import { CalendarIcon, ChevronRightIcon, ClockIcon, PinIcon } from './StudentIcons';
+import { ClockIcon, PinIcon } from './StudentIcons';
 
 interface StudentUpcomingEventsProps {
-  events: unknown[];
+  events: StudentEvent[];
   error?: string;
 }
 
-function EventDateBlock({ date }: { date: Date | null }) {
-  if (!date) {
-    return (
-      <span className="sd-date" aria-hidden="true">
-        <span className="sd-date__dow">Date</span>
-        <span className="sd-date__day">--</span>
-        <span className="sd-date__mon">TBA</span>
-      </span>
-    );
-  }
-  return (
-    <time className="sd-date" dateTime={date.toISOString()}>
-      <span className="sd-date__dow">{formatWeekday(date)}</span>
-      <span className="sd-date__day">{formatDayNumber(date)}</span>
-      <span className="sd-date__mon">{formatMonthShort(date)}</span>
-    </time>
-  );
-}
-
-function EventTime({ event }: { event: StudentEvent }) {
-  const date = eventDateValue(event);
-  if (!date) return <span>Time to be announced</span>;
-  return <span>{formatClock(date)}</span>;
-}
-
+/**
+ * The next event is the page's one object: a ticket with a counterfoil date
+ * block, a perforated seam, and a countdown gauge. Everything else about the
+ * event is a mark on it, not a sentence about it.
+ */
 export function StudentUpcomingEvents({ events, error }: StudentUpcomingEventsProps) {
-  const sorted = sortEvents(events.map(asEvent).filter((event): event is StudentEvent => event !== null));
-  const next = sorted[0] ?? null;
-  const rest = sorted.slice(1, 4);
-  const nextDate = next ? eventDateValue(next) : null;
+  const next = events[0] ?? null;
+  const date = next ? eventDateValue(next) : null;
   const days = next?.eventDate ? calendarDaysUntil(next.eventDate) : null;
   const when = countdownFor(days);
-  const nextClub = next ? clubNameOf(next) : null;
+  const club = next ? clubNameOf(next) : null;
+  const logo = next ? clubLogoOf(next) : null;
+  const closeness = closenessFor(days);
+
+  const ringLabel = days === null ? 'TBA' : days <= 0 ? 'now' : String(days);
+  const unit = days === null ? 'date' : days <= 0 ? 'today' : days === 1 ? 'day' : 'days';
+
+  const aria = next
+    ? [
+        next.title,
+        club,
+        date ? formatCompactDate(date) : 'date to be announced',
+        date ? formatClock(date) : null,
+        next.location,
+        when ? when.sentence : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : '';
 
   return (
     <DashboardSection
       id="sd-next"
       title="Next up"
-      meta={
-        sorted.length > 0
-          ? `${sorted.length} ${sorted.length === 1 ? 'event' : 'events'} ahead`
-          : undefined
-      }
-      live={Boolean(next)}
-      accent={Boolean(next)}
-      actionLabel="Calendar"
-      actionTo="/events"
+      meta={events.length > 0 ? `${events.length} ahead` : undefined}
       className="sd-next"
     >
       {error ? (
         <PanelError message={error} />
       ) : !next ? (
-        <div className="sd-panel__state">
-          <div className="ui-empty sd-empty">
-            <span className="ui-empty__mark">
-              <CalendarIcon />
-            </span>
-            <p className="ui-empty__title">Nothing on the calendar</p>
-            <p className="ui-empty__text">
-              Club events appear here as soon as they are published. The calendar link above shows
-              everything across campus.
-            </p>
-          </div>
+        <div className="sd-region__state">
+          <p className="sd-region__empty">No upcoming events.</p>
+          <Link className="ui-btn ui-btn--quiet ui-btn--sm" to="/events">
+            Browse events
+          </Link>
         </div>
       ) : (
-        <div className="sd-panel__body ui-panel__body ui-panel__body--flush">
-          <Link className="sd-next__lead" to="/events">
-            <EventDateBlock date={nextDate} />
-            <span className="sd-next__copy">
-              <span className="sd-next__club">{nextClub ?? 'Campus calendar'}</span>
-              <span className="sd-next__title">{next.title}</span>
-              <span className="sd-next__facts">
-                {next.location ? (
-                  <span className="sd-next__fact">
-                    <PinIcon className="sd-icon sd-icon--sm" />
-                    <span className="ui-truncate">{next.location}</span>
-                  </span>
-                ) : null}
-                <span className="sd-next__fact">
-                  <ClockIcon className="sd-icon sd-icon--sm" />
-                  <EventTime event={next} />
+        <Link className="sd-ticket" to="/events" aria-label={aria}>
+          <span className="sd-stub" aria-hidden="true">
+            <span className="sd-stub__wd">{date ? formatWeekday(date) : 'Date'}</span>
+            <span className="sd-stub__day">{date ? formatDayNumber(date) : '--'}</span>
+            <span className="sd-stub__mo">{date ? formatMonthShort(date) : 'TBA'}</span>
+          </span>
+
+          <span className="sd-ticket__perf" aria-hidden="true">
+            <span className="sd-ticket__notch sd-ticket__notch--top" />
+            <span className="sd-ticket__notch sd-ticket__notch--bottom" />
+          </span>
+
+          <span className="sd-ticket__body">
+            <span className="sd-ticket__club">
+              {logo ? (
+                <span className="sd-ticket__crest">
+                  <img src={logo} alt="" />
                 </span>
+              ) : (
+                <span className="sd-ticket__crest">{initialsOf(club ?? 'Campus')}</span>
+              )}
+              <span className="sd-ticket__club-name">{club ?? 'Campus calendar'}</span>
+            </span>
+
+            <span className="sd-ticket__title">{next.title}</span>
+
+            <span className="sd-ticket__facts">
+              {next.location ? (
+                <span className="sd-ticket__fact">
+                  <PinIcon className="sd-icon sd-icon--sm" />
+                  <span className="ui-truncate">{next.location}</span>
+                </span>
+              ) : null}
+              <span className="sd-ticket__fact">
+                <ClockIcon className="sd-icon sd-icon--sm" />
+                <span>{date ? formatClock(date) : 'Time TBA'}</span>
               </span>
             </span>
-            {when ? (
-              <span className="sd-next__when">
-                {when.value ? <span className="sd-next__when-n">{when.value}</span> : null}
-                <span className="sd-next__when-l">{when.label}</span>
-              </span>
-            ) : null}
-          </Link>
+          </span>
 
-          {rest.length > 0 ? (
-            <div className="ui-rows sd-week">
-              {rest.map((event) => {
-                const date = eventDateValue(event);
-                const club = clubNameOf(event);
-                const facts = [
-                  club,
-                  date ? formatClock(date) : 'Time to be announced',
-                  event.location,
-                ].filter(Boolean);
-                return (
-                  <Link key={event._id} className="ui-row ui-row--link sd-week__row" to="/events">
-                    <span className="sd-week__date">
-                      {date ? `${formatWeekday(date)} ${formatDayMonth(date)}` : 'Date TBA'}
-                    </span>
-                    <span className="ui-row__main">
-                      <span className="ui-row__title">{event.title}</span>
-                      <span className="ui-row__sub ui-truncate">{facts.join(' · ')}</span>
-                    </span>
-                    <span className="ui-row__actions" aria-hidden="true">
-                      <ChevronRightIcon className="sd-icon sd-icon--sm sd-week__chevron" />
-                    </span>
-                  </Link>
-                );
-              })}
-            </div>
-          ) : null}
-        </div>
+          <span className="sd-ticket__count">
+            <Ring value={closeness} size={64} tone="accent" label={ringLabel} />
+            <span className="sd-ticket__unit">{unit}</span>
+          </span>
+        </Link>
       )}
     </DashboardSection>
   );

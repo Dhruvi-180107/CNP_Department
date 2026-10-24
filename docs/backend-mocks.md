@@ -17,6 +17,51 @@ endpoint change that would let it stop.
 
 ---
 
+## 0. Status — the API side is largely done
+
+The backend pass implemented most of this backlog. The authoritative list of endpoints, fields
+and response shapes is in **[`docs/backend-changes.md`](./backend-changes.md)**; this file keeps
+tracking what the **client** still does for itself.
+
+| Now available on the API | Replaces |
+|---|---|
+| `GET /clubs/summary`, `/projects/summary`, `/inventory/summary`, `/material-requests/summary`, `/events/summary`, `/dashboard/summary` | the client-side sums in §1 |
+| `GET /clubs?scope=joined` + `myMembership` on each club | the club-membership N+1 in §2 |
+| `GET /projects?mine=1` + `memberCount`, `myRelation`, `pendingJoinRequests` | the project-roster N+1 in §2 |
+| `memberCount` on `GET /mentors/:id/projects` | the missing mentor team size in §2 |
+| `q`, `status`, `scope`, `month`, `clubId`, `projectId`, `type`, `kind`, cursor/limit on every list | the client-side filters in §3 |
+| `club.memberCount` / `coreTeamCount` / `pendingRequestCount` on `GET /clubs/:id`; `club.foundedAt` | the derived fields in §4 |
+| `PATCH /notifications/:id/unread` | the missing verb in §5 |
+| `DELETE /clubs/:id/join`, `DELETE /projects/:id/join` | the missing verbs in §5 |
+| `POST /material-requests/bulk-approve` / `bulk-reject` | the client-loop in §5 |
+| `GuitarInventory.minimumStock` | the 25 % heuristic in §5 |
+| `GET /search?q=` | the shell's nav-only jump filter in §6 |
+| `GET /auth/me → completeness` | the recomputed profile percentage in §4 |
+
+**What that means for the UI:** anything still derived in §1–§6 is now a *choice*, not a
+limitation, and should be moved as each page is touched. The tables below stay as written so the
+gap is visible; an item is removed only when the page actually calls the endpoint.
+
+### Moved to the API in the wiring pass
+
+| Surface | Was | Now |
+|---|---|---|
+| Student dashboard clubs | `GET /clubs` + `GET /clubs/:id/members` **per club**, then a scan for the student's record | one `GET /clubs?scope=joined`; each club carries `myMembership` (`hooks/useStudentDashboardData.ts`) |
+| Club board membership | derived from every roster | `club.myMembership`, with the roster scan kept only as a fallback (`pages/Clubs/Clubs.tsx`) |
+| Club detail | `GET /clubs` then `.find(id)`, membership scanned from the roster | `GET /clubs/:id` (one request, 404 from the API), membership from `myMembership` (`pages/Clubs/ClubDetails.tsx`) |
+| Project relation + team size | re-derived from `teamLeaderId` and the per-project roster | `myRelation` and `memberCount` from `GET /projects` / `GET /projects/:id` (`pages/Projects/Projects.tsx`, `ProjectDetails.tsx`) |
+| Low stock | 25 %-of-total heuristic on the client | `GuitarInventory.minimumStock`, set per item in the create/edit form (`pages/Inventory/Inventory.tsx`) |
+| Notification read state | one-way: read, or read-all | two-way toggle in place, row and reading pane (`PATCH /notifications/:id/unread`) |
+| Leaving a club / project | not offered anywhere — the API verb existed but no UI called it | `Leave club` / `Leave project` with an in-place confirm; core-team seats and team leaders are not offered the action because the API refuses them (`pages/Clubs/ClubDetails.tsx`, `pages/Projects/ProjectDetails.tsx`) |
+
+Still deliberately client-side: the project roster N+1 (the board draws faces, so the roster is
+the payload), the palette's cached full lists (it promises no per-keystroke network), and the
+list filters on pages not yet touched — all listed below and each one a choice, not a gap.
+
+
+---
+
+
 ## 1. Aggregates the pages currently compute themselves
 
 These are the highest-value changes: they remove an N+1 or replace a client sum with a
@@ -26,7 +71,7 @@ server truth, and every one of them is already needed by more than one screen.
 |---|---|---|---|
 | Dashboard summary for a student | `/dashboard` stat strip, next-up countdown | Sorted and diffed from `/events/upcoming`, `/notifications`, membership lists | `GET /students/me/summary` → `{ nextEvent, daysUntil, eventsAhead, clubRoles, projectRoles, unread }` |
 | Clubs summary | `/clubs` head (`3 clubs · 10 members · 2 coordinators`), board footer | Summed over `GET /clubs` | `GET /clubs/summary` |
-| Projects summary | `/projects` foot (`3 projects · 4 students · 3 team leaders`), "You" panel | Joined from `GET /projects` + per-project members | `GET /projects/summary` → counts + `mine: { leading, member }` |
+| Projects summary | `/projects` standing instrument, team leaders rail, status rail widths | Joined from `GET /projects` + per-project members | `GET /projects/summary` → counts + `mine: { leading, member, requesting }` |
 | Inventory summary | `/inventory` stats, project-admin ops strip (`57 of 215 units on loan`) | Summed over `GET /inventory` | `GET /inventory/summary` → `{ items, unitsTotal, unitsOnLoan, lowStock }` |
 | Material-request summary | `/material-requests` stats (`oldest waiting 2h`, units requested), project-admin queue | Derived from the request list | `GET /material-requests/summary` → `{ pending, unitsPending, oldestPendingAt, resolved }` |
 | Events month summary | `/events` month panel meta, "Clubs this month" rail | Sliced from the full event list | `GET /events/summary?month=YYYY-MM` → counts per club and status |
@@ -49,7 +94,7 @@ All of these work today, but the browser fetches the full list and narrows it.
 | Club directory search (name, description, coordinator, department) | `/clubs` | `GET /clubs?q=` |
 | "My clubs" filter | `/clubs` | `GET /clubs?scope=joined` |
 | Member search and ordering inside a club | Club detail members panel | `GET /clubs/:id/members?q=&sort=role,name` |
-| Project search, status filter, status grouping | `/projects` | `GET /projects?status=&q=` |
+| Project search, status filter (the status rail), status grouping | `/projects` | `GET /projects?status=&q=` |
 | Project member / mentor ordering (leader first) | Project detail roster | Sort server-side, or accept client order |
 | Event club filter and month window | `/events` | `GET /events?clubId=&month=YYYY-MM` |
 | Past events for students | `/events` agenda | Students only receive `/events/upcoming`; let it accept a `from` in the past, or expose `GET /events?window=` |
@@ -65,13 +110,15 @@ All of these work today, but the browser fetches the full list and narrows it.
 | `club.pendingRequestCount` | Club rows (coordinator, club admin), "Needs review" | Grouped from the request list | Add to `GET /clubs` |
 | `club.foundedAt` | Club detail "Created" cell | Currently uses `createdAt`, which is when the record was created, not when the club was founded | `foundedAt` if the department keeps one |
 | `club.featured` | `/clubs` lead-club treatment | The page picks "newest club you belong to, else newest club" | A `featured` flag, or `GET /clubs?featured=1` |
-| `project.myRelation` / `memberCount` | `/projects` rows (status + "You lead / Member / Request pending") | Needs a per-project roster call today | Include in the directory payload |
+| `project.myRelation` / `memberCount` | `/projects` beds (team stack, bed against the largest team, relation mark) | Needs a per-project roster call today; the bed's ceiling is the largest roster fetched | Include both, plus `teamCapacity`, in the directory payload |
 | `project.pendingJoinRequests` | Project detail facts aside | Count lifted from the join-request panel's own fetch | Add the count to `GET /projects/:id` |
 | `notifications.type` as a documented enum | Inbox type filter and kind labels | The UI infers a family from the free-text `type` string | Document `type` values, or add `kind` |
-| `user.createdAt` | Profile "Member since" | Returned by Mongoose but absent from the `User` type and the docs | Add to the documented user payload and `frontend/src/types` |
-| `user.completeness` | Profile identity band (meter, "Missing …") | Recomputed from the same predicate as `isProfileComplete()` | `GET /auth/me` → `{ completeness: { percent, missing[] } }` |
+| `user.createdAt` | Profile "Member since" plate | Returned by Mongoose but absent from the `User` type and the docs | Add to the documented user payload and `frontend/src/types` |
+| `user.completeness` | Profile strength strip (ring, "N of 5", missing marks) | Recomputed from the same predicate as `isProfileComplete()` | `GET /auth/me` → `{ completeness: { percent, missing[] } }` |
 | `mentor project memberCount` | Mentor rows | Not in `/mentors/:id/projects` | See §2 |
 | Material `sourceCounts` | Project materials coverage meter | Counted from rows | Optional aggregate |
+| Material-request approval summary | Project detail aside coverage ring (`approved / total requests`) | Counted from the request rows the panel already fetches | `approvalSummary` on `GET /projects/:id` or the material-requests payload |
+| Join-request age | Project detail request queue depth (oldest tick) | `now - createdAt`, presentation only | `waitingSince`, or keep as presentation |
 
 ## 5. Missing verbs
 

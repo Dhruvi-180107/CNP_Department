@@ -12,7 +12,7 @@ export interface StudentEvent {
   eventDate?: string;
   location?: string;
   description?: string;
-  clubId?: { _id?: string; name?: string } | string | null;
+  clubId?: { _id?: string; name?: string; logo?: string | null } | string | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -61,6 +61,12 @@ export function clubNameOf(event: StudentEvent): string | null {
   return club.name?.trim() || null;
 }
 
+export function clubLogoOf(event: StudentEvent): string | null {
+  const club = event.clubId;
+  if (!club || typeof club === 'string') return null;
+  return club.logo?.trim() || null;
+}
+
 /** Populated references arrive as `{ _id }`, bare ones as a string. */
 export function refId(ref: { _id?: string } | string | null | undefined): string | undefined {
   if (!ref) return undefined;
@@ -85,6 +91,125 @@ export function calendarDaysUntil(value: string | Date, now = new Date()): numbe
   return Math.round((startOfLocalDay(date) - startOfLocalDay(now)) / DAY_MS);
 }
 
+export function startOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+export function addDays(date: Date, days: number): Date {
+  const next = startOfDay(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+/** Local `YYYY-MM-DD` key — a calendar day, never a UTC instant. */
+export function localDayKey(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+/** Monday-based week start, the app's calendar convention. */
+export function mondayOf(date: Date): Date {
+  return addDays(date, -((date.getDay() + 6) % 7));
+}
+
+/* ── The term strip ──────────────────────────────────────────────────────────
+   A six-week horizon, Monday first, plotted day by day. This is a *window onto
+   the data the page already fetched* — not a new fetch. Everything it draws is
+   the real event list placed on its real date. */
+
+export const TERM_WEEKS = 6;
+
+export interface TermDay {
+  key: string;
+  date: Date;
+  /** 0-based day inside the horizon. */
+  index: number;
+  isToday: boolean;
+  isWeekStart: boolean;
+  events: StudentEvent[];
+}
+
+export interface TermWindow {
+  days: TermDay[];
+  /** Monday of each week column, in order. */
+  weeks: Date[];
+  start: Date;
+  end: Date;
+  /** Events that fall after the horizon — counted, never dropped silently. */
+  later: StudentEvent[];
+  /** Events with a real date inside the horizon. */
+  placed: number;
+}
+
+/** MOCK: the horizon, the week grouping and the per-day density are placed in
+    the browser. `/events/upcoming` returns a flat list with dates; no endpoint
+    returns a term window or a per-day count. */
+export function buildTermWindow(
+  events: StudentEvent[],
+  now = new Date(),
+  weeks = TERM_WEEKS,
+): TermWindow {
+  const start = mondayOf(now);
+  const total = weeks * 7;
+  const todayKey = localDayKey(now);
+
+  const days: TermDay[] = [];
+  const byKey = new Map<string, TermDay>();
+  const weekStarts: Date[] = [];
+
+  for (let index = 0; index < total; index += 1) {
+    const date = addDays(start, index);
+    const day: TermDay = {
+      key: localDayKey(date),
+      date,
+      index,
+      isToday: localDayKey(date) === todayKey,
+      isWeekStart: index % 7 === 0,
+      events: [],
+    };
+    days.push(day);
+    byKey.set(day.key, day);
+    if (day.isWeekStart) weekStarts.push(date);
+  }
+
+  const end = addDays(start, total);
+  const later: StudentEvent[] = [];
+  let placed = 0;
+
+  for (const event of events) {
+    const date = eventDateValue(event);
+    if (!date) continue;
+    const day = byKey.get(localDayKey(date));
+    if (day) {
+      day.events.push(event);
+      placed += 1;
+    } else if (startOfDay(date) >= end) {
+      later.push(event);
+    }
+  }
+
+  for (const day of days) {
+    day.events.sort((a, b) => eventTimestamp(a) - eventTimestamp(b));
+  }
+
+  return { days, weeks: weekStarts, start, end, later, placed };
+}
+
+/* ── Countdown ──────────────────────────────────────────────────────────────
+   The ring shows closeness on a fortnight, the numeral carries the true day
+   count. `value` is a position on that scale, never a claimed percentage. */
+
+export const COUNTDOWN_HORIZON = 14;
+
+/** MOCK: the ring's scale is a display convention (a fortnight), not a fact the
+    API returns; the numeral beside it is the real day count. */
+export function closenessFor(days: number | null, horizon = COUNTDOWN_HORIZON): number {
+  if (days === null) return 0;
+  if (days <= 0) return 1;
+  return Math.max(0, Math.min(1, 1 - days / horizon));
+}
+
 export interface Countdown {
   /** Large numeral, when the distance is worth showing as a number. */
   value?: string;
@@ -101,18 +226,20 @@ export function countdownFor(days: number | null): Countdown | null {
   return { value: String(days), label: 'days', sentence: `in ${days} days` };
 }
 
-export function plural(count: number, one: string, many: string): string {
-  return count === 1 ? one : many;
-}
-
 /* ── Formatting ── */
 
-export function formatLongDate(date = new Date()): string {
-  return date.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+/** "Sat 24 Oct" — the compact form the head and the strip labels use. */
+export function formatCompactDate(date: Date): string {
+  return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+/** "24 Oct" — no weekday, for the week ruler. */
+export function formatDayMonth(date: Date): string {
+  return `${date.getDate()} ${date.toLocaleDateString('en-GB', { month: 'short' })}`;
 }
 
 export function formatWeekday(date: Date): string {
-  return date.toLocaleDateString(undefined, { weekday: 'short' });
+  return date.toLocaleDateString('en-GB', { weekday: 'short' });
 }
 
 export function formatDayNumber(date: Date): string {
@@ -120,15 +247,11 @@ export function formatDayNumber(date: Date): string {
 }
 
 export function formatMonthShort(date: Date): string {
-  return date.toLocaleDateString(undefined, { month: 'short' });
+  return date.toLocaleDateString('en-GB', { month: 'short' });
 }
 
 export function formatClock(date: Date): string {
-  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-}
-
-export function formatDayMonth(date: Date): string {
-  return `${formatDayNumber(date)} ${formatMonthShort(date)}`;
+  return date.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit' });
 }
 
 /** "Just now", "12m ago", "3h ago", "4d ago", then a plain date. */
@@ -146,9 +269,17 @@ export function relativeTime(value: string | undefined, now = new Date()): strin
   return formatDayMonth(date);
 }
 
+/* The same letters the club crest draws: the significant words, so "Photography
+   Club" reads PH on the dashboard and on the directory. */
 export function initialsOf(name: string): string {
-  const parts = name.trim().split(/\s+/).slice(0, 2);
-  return parts.map((part) => part.charAt(0).toUpperCase()).join('') || '?';
+  const cleaned = name
+    .replace(/\b(club|society|committee|association|collective|group|cell)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const parts = (cleaned || name).trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
 }
 
 /* ── Domain labels ── */
@@ -180,6 +311,16 @@ export function projectStatus(status: string | undefined): ProjectStatus | null 
   if (key === 'inactive' || key === 'archived') return { label: 'Inactive', tone: 'plain' };
   if (key === 'on_hold' || key === 'paused') return { label: 'On hold', tone: 'warning' };
   return { label: status.charAt(0).toUpperCase() + status.slice(1).toLowerCase(), tone: 'plain' };
+}
+
+/** MOCK: the project payload carries a status word, not a pipeline stage. The
+    rail plots that word at one of three positions (started / active / closed). */
+export function projectStage(status: string | undefined): 0 | 1 | 2 | 3 {
+  const key = status?.trim().toLowerCase();
+  if (!key) return 0;
+  if (key === 'completed' || key === 'done') return 3;
+  if (key === 'active' || key === 'in_progress') return 2;
+  return 1;
 }
 
 export interface RequestStatus {
@@ -214,8 +355,4 @@ export function requestTarget(request: StudentJoinRequest): {
     id: refId(request.projectId),
     name: project?.name?.trim() || 'Project',
   };
-}
-
-export function tagToneClass(tone: 'positive' | 'warning' | 'negative' | 'plain'): string {
-  return tone === 'plain' ? 'ui-tag ui-tag--plain' : `ui-tag is-${tone}`;
 }

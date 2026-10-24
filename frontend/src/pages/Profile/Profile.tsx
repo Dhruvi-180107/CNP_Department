@@ -1,39 +1,42 @@
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type CSSProperties,
+  type FormEvent,
+  type RefObject,
+} from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import type { User } from '../../types';
+import { Counter, DateTile, KindGlyph, Ring, Segments } from '../../components/ui/vis';
+import { Tooltip } from '../../components/ui/Tooltip';
+import { initialsOf, roleKind, roleLabel } from './labels';
+import {
+  AlertIcon,
+  CameraIcon,
+  CheckIcon,
+  CopyIcon,
+  FieldGlyph,
+  LockIcon,
+  PencilIcon,
+  type FieldKind,
+} from './icons';
 import './profile.css';
-
-const ROLE_LABELS: Record<string, string> = {
-  student: 'Student',
-  faculty_coordinator: 'Faculty coordinator',
-  faculty_mentor: 'Faculty mentor',
-  club_admin: 'Club admin',
-  project_admin: 'Project admin',
-};
 
 type ProfileUser = User & { createdAt?: string };
 
-function roleLabel(role?: string) {
-  if (!role) return '';
-  return ROLE_LABELS[role] ?? role.replace(/_/g, ' ');
+/** The fields that can be missing, and therefore can be focused from the plate. */
+type EditField = 'name' | 'department' | 'phone' | 'universityId' | 'semester' | 'bio';
+
+interface CompletenessField {
+  key: EditField;
+  label: string;
+  done: boolean;
 }
 
-function initialsOf(name: string) {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map(part => part.charAt(0).toUpperCase())
-    .join('');
-}
-
-function formatMemberSince(value?: string) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-}
+const stagger = (i: number) => ({ '--prf-i': i } as CSSProperties);
 
 export default function Profile() {
   const { user, updateUser } = useAuth();
@@ -45,9 +48,10 @@ export default function Profile() {
   const hasUniId = !!(user?.universityId && user.universityId.trim());
   const hasSemester = !!user?.semester;
   const hasName = !!(user?.name && user.name.trim());
+  // The exact predicate behind isProfileComplete() in AuthContext.
   const isProfileComplete = hasName && hasDept && hasPhone && (isStudent ? (hasUniId && hasSemester) : true);
 
-  const [isEditing, setIsEditing] = useState(!isProfileComplete);
+  const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
     name: user?.name || '',
     department: user?.department || '',
@@ -61,16 +65,29 @@ export default function Profile() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'email' | 'phone' | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const phoneInputRef = useRef<HTMLInputElement>(null);
+  const departmentInputRef = useRef<HTMLInputElement>(null);
+  const universityIdInputRef = useRef<HTMLInputElement>(null);
+  const semesterInputRef = useRef<HTMLInputElement>(null);
   const bioInputRef = useRef<HTMLTextAreaElement>(null);
   const editButtonRef = useRef<HTMLButtonElement>(null);
   const focusEditRef = useRef(false);
   const focusReadRef = useRef(false);
-  const focusFieldRef = useRef<'name' | 'bio'>('name');
+  const focusFieldRef = useRef<EditField>('name');
   const copyTimer = useRef<number | null>(null);
+
+  const fieldRefs: Record<EditField, RefObject<HTMLElement | null>> = {
+    name: nameInputRef,
+    department: departmentInputRef,
+    phone: phoneInputRef,
+    universityId: universityIdInputRef,
+    semester: semesterInputRef,
+    bio: bioInputRef,
+  };
 
   useEffect(() => {
     return () => {
@@ -81,8 +98,7 @@ export default function Profile() {
   useEffect(() => {
     if (isEditing && focusEditRef.current) {
       focusEditRef.current = false;
-      if (focusFieldRef.current === 'bio') bioInputRef.current?.focus();
-      else nameInputRef.current?.focus();
+      fieldRefs[focusFieldRef.current].current?.focus();
     } else if (!isEditing && focusReadRef.current) {
       focusReadRef.current = false;
       editButtonRef.current?.focus();
@@ -147,7 +163,7 @@ export default function Profile() {
     setSuccess('');
   };
 
-  const handleStartEdit = (field: 'name' | 'bio' = 'name') => {
+  const handleStartEdit = (field: EditField = 'name') => {
     setError('');
     setSuccess('');
     focusFieldRef.current = field;
@@ -155,54 +171,84 @@ export default function Profile() {
     setIsEditing(true);
   };
 
-  const handleCopyEmail = async () => {
+  const copyValue = async (value: string, kind: 'email' | 'phone') => {
     try {
-      await navigator.clipboard.writeText(user.email);
-      setCopied(true);
+      await navigator.clipboard.writeText(value);
+      setCopied(kind);
       if (copyTimer.current) window.clearTimeout(copyTimer.current);
-      copyTimer.current = window.setTimeout(() => setCopied(false), 1800);
+      copyTimer.current = window.setTimeout(() => setCopied(null), 1800);
     } catch {
-      /* Clipboard is unavailable outside a secure context; the mailto link remains. */
+      /* Clipboard is unavailable outside a secure context; the mailto/tel link remains. */
     }
   };
 
   // MOCK: no completeness field exists — the percentage is derived client-side
-  // from the same required-field predicate as isProfileComplete().
-  const completeness = [
-    { label: 'Name', done: hasName },
-    { label: 'Department', done: hasDept },
-    { label: 'Phone number', done: hasPhone },
+  // from the same required-field predicate as isProfileComplete(). While editing
+  // it previews the unsaved form so the gauge answers the fields above it.
+  const source = isEditing
+    ? {
+        name: formData.name,
+        department: formData.department,
+        phone: formData.phone,
+        universityId: formData.universityId,
+        semester: formData.semester as string | number | undefined,
+      }
+    : {
+        name: user.name,
+        department: user.department,
+        phone: user.phone,
+        universityId: user.universityId,
+        semester: user.semester as string | number | undefined,
+      };
+
+  const completeness: CompletenessField[] = [
+    { key: 'name', label: 'Name', done: !!(source.name && source.name.trim()) },
+    { key: 'department', label: 'Department', done: !!(source.department && source.department.trim()) },
+    { key: 'phone', label: 'Phone number', done: !!(source.phone && source.phone.trim()) },
     ...(isStudent
       ? [
-          { label: 'University ID', done: hasUniId },
-          { label: 'Semester', done: hasSemester },
+          {
+            key: 'universityId' as const,
+            label: 'University ID',
+            done: !!(source.universityId && source.universityId.trim()),
+          },
+          { key: 'semester' as const, label: 'Semester', done: !!source.semester },
         ]
       : []),
   ];
   const doneCount = completeness.filter(field => field.done).length;
   const percent = Math.round((doneCount / completeness.length) * 100);
-  const missing = completeness.filter(field => !field.done).map(field => field.label);
+  const missing = completeness.filter(field => !field.done);
+
   // MOCK: createdAt is returned by Mongoose but is not part of the documented
-  // User shape; the row is omitted when the field is absent.
-  const memberSince = formatMemberSince(profileUser?.createdAt);
+  // User shape; the tile is omitted when the field is absent.
+  const rawCreatedAt = profileUser?.createdAt;
+  const createdAtDate = rawCreatedAt ? new Date(rawCreatedAt) : null;
+  const memberSince = createdAtDate && !Number.isNaN(createdAtDate.getTime()) ? createdAtDate : null;
 
   const identityName = (isEditing ? formData.name.trim() : user.name) || user.name;
   const identityDepartment = (isEditing ? formData.department : user.department) || user.department;
   const identitySemester = (isEditing ? formData.semester : user.semester) || user.semester;
+  const identityUniversityId = (isEditing ? formData.universityId : user.universityId) || user.universityId;
   const identityEnrollment = (isEditing ? formData.enrollmentNumber : user.enrollmentNumber) || user.enrollmentNumber;
 
-  const metaItems = [
-    identityDepartment,
-    isStudent && identitySemester ? `Semester ${identitySemester}` : '',
-    isStudent && identityEnrollment ? `Enrollment ${identityEnrollment}` : '',
-  ].filter(Boolean) as string[];
+  const facts: { kind: FieldKind; label: string; value: string }[] = [];
+  if (identityDepartment) facts.push({ kind: 'department', label: 'Department', value: identityDepartment });
+  if (isStudent && identitySemester) {
+    facts.push({ kind: 'semester', label: 'Semester', value: String(identitySemester) });
+  }
+  if (isStudent && identityUniversityId) {
+    facts.push({ kind: 'universityId', label: 'University ID', value: identityUniversityId });
+  }
+  if (isStudent && identityEnrollment) {
+    facts.push({ kind: 'enrollmentNumber', label: 'Enrollment', value: identityEnrollment });
+  }
 
   return (
     <div className="prf-page">
       <header className="ui-page-head">
         <div className="ui-page-head__text">
-          <h1 className="ui-title">Your profile</h1>
-          <p className="ui-sub">Identity, academic record and contact details on file for your account.</p>
+          <h1 className="ui-title">Profile</h1>
         </div>
         <div className="ui-page-actions">
           {isEditing ? (
@@ -212,12 +258,7 @@ export default function Profile() {
                   Cancel
                 </button>
               )}
-              <button
-                type="submit"
-                form="prf-profile-form"
-                className="ui-btn ui-btn--primary"
-                disabled={loading}
-              >
+              <button type="submit" form="prf-profile-form" className="ui-btn ui-btn--primary" disabled={loading}>
                 {loading ? 'Saving…' : 'Save changes'}
               </button>
             </>
@@ -235,21 +276,8 @@ export default function Profile() {
         </div>
       </header>
 
-      {(error || success || !isProfileComplete) && (
+      {(error || success) && (
         <div className="prf-notices">
-          {!isProfileComplete && (
-            <div className="ui-notice">
-              <AlertIcon />
-              <span>
-                <strong>Profile incomplete.</strong>{' '}
-                {missing.length === 1
-                  ? missing[0]
-                  : `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}`}{' '}
-                {missing.length === 1 ? 'is' : 'are'} still needed. Complete{' '}
-                {missing.length === 1 ? 'it' : 'them'} to finish setting up your account.
-              </span>
-            </div>
-          )}
           {error && (
             <div className="ui-notice ui-notice--error" role="alert">
               <AlertIcon />
@@ -257,222 +285,327 @@ export default function Profile() {
             </div>
           )}
           {success && (
-            <p className="prf-notice" role="status">
+            <div className="ui-notice ui-notice--positive" role="status">
               <CheckIcon />
               <span>{success}</span>
-            </p>
+            </div>
           )}
         </div>
       )}
 
-      <section className="prf-identity" aria-labelledby="prf-identity-name">
-        <div className="prf-identity__avatar">
-          {user.profileImage ? (
-            <span className="ui-avatar prf-avatar">
-              <img src={user.profileImage} alt="" />
+      {/* ── The identity plate ───────────────────────────────────────────── */}
+      <section
+        className={`ui-panel ui-panel--accent prf-plate prf-enter${isEditing ? ' prf-plate--editing' : ''}`}
+        style={stagger(0)}
+        aria-labelledby="prf-name"
+      >
+        <div className="prf-plate__body">
+          <div className="prf-portrait">
+            <span className="prf-portrait__face">
+              {user.profileImage ? (
+                <img src={user.profileImage} alt="" />
+              ) : (
+                <span className="prf-portrait__mono" aria-hidden="true">{initialsOf(identityName)}</span>
+              )}
             </span>
-          ) : (
-            <span className="ui-avatar prf-avatar" aria-hidden="true">
-              {initialsOf(identityName)}
-            </span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="ui-visually-hidden"
+              tabIndex={-1}
+            />
+            <Tooltip label={user.profileImage ? 'Replace photo' : 'Add a photo'}>
+              <button
+                type="button"
+                className="prf-portrait__action"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={loading}
+                aria-label={user.profileImage ? 'Replace profile photo' : 'Upload profile photo'}
+              >
+                <CameraIcon />
+              </button>
+            </Tooltip>
+          </div>
+
+          <div className="prf-plate__id">
+            <div className="prf-plate__line">
+              <h2 className="prf-name" id="prf-name">{identityName}</h2>
+              <span className="prf-role">
+                <KindGlyph kind={roleKind(user.role)} size={13} />
+                {roleLabel(user.role)}
+              </span>
+            </div>
+          </div>
+
+          {memberSince && (
+            <div className="prf-since">
+              <span className="prf-since__label">Member since</span>
+              <span className="prf-since__date">
+                <DateTile date={memberSince} size="lg" />
+                <span className="prf-since__year">{memberSince.getFullYear()}</span>
+              </span>
+            </div>
           )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleImageUpload}
-            className="ui-visually-hidden"
-            tabIndex={-1}
-          />
-          <button
-            type="button"
-            className="prf-avatar__action"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={loading}
-            aria-label={user.profileImage ? 'Replace profile photo' : 'Upload profile photo'}
-            title="Change profile photo"
-          >
-            <CameraIcon />
-          </button>
         </div>
 
-        <div className="prf-identity__body">
-          <div className="prf-identity__line">
-            <h2 className="prf-identity__name" id="prf-identity-name">{identityName}</h2>
-            <span className="ui-tag ui-tag--plain">{roleLabel(user.role)}</span>
-          </div>
-          {metaItems.length > 0 && (
-            <p className="prf-identity__meta">
-              {metaItems.map((item, index) => (
-                <span key={`${item}-${index}`}>
-                  {index > 0 && <span className="prf-sep" aria-hidden="true">·</span>}
-                  {item}
+        {facts.length > 0 && (
+          <ul className="prf-facts">
+            {facts.map(fact => (
+              <li className="prf-fact" key={fact.label}>
+                <span className="prf-fact__tile" aria-hidden="true">
+                  <FieldGlyph kind={fact.kind} size={16} />
                 </span>
-              ))}
-            </p>
-          )}
-        </div>
+                <span className="prf-fact__text">
+                  <span className="prf-fact__label">{fact.label}</span>
+                  <span className="prf-fact__value">{fact.value}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
 
-        <div
-          className="prf-completion"
-          title={missing.length ? `Missing: ${missing.join(', ')}` : 'All required fields are on file'}
-        >
-          <p className="prf-completion__value">{percent}%</p>
-          <div
-            className="ui-meter"
-            role="progressbar"
-            aria-label="Profile completeness"
-            aria-valuenow={percent}
-            aria-valuemin={0}
-            aria-valuemax={100}
+        <div className="prf-strength">
+          <span
+            className="prf-strength__gauge"
+            role="img"
+            aria-label={`Profile strength ${percent} percent, ${doneCount} of ${completeness.length} details on file`}
           >
-            <div className="ui-meter__fill" style={{ transform: `scaleX(${percent / 100})` }} />
-          </div>
-          <p className="prf-completion__label">
-            {percent === 100
-              ? 'All required details on file'
-              : missing.length === 1
-                ? `Missing ${missing[0].toLowerCase()}`
-                : `Missing ${missing.length} details`}
-          </p>
+            <Ring value={percent / 100} size={56} thickness={5} />
+            <span className="prf-strength__pct" aria-hidden="true">
+              <Counter value={percent} duration={620} format={n => String(Math.round(n))} />
+              <span className="prf-strength__unit">%</span>
+            </span>
+          </span>
+
+          <span className="prf-strength__readout">
+            <span className="prf-strength__title">Profile strength</span>
+            <span className="prf-strength__ratio">
+              {doneCount} of {completeness.length}
+            </span>
+          </span>
+
+          <Segments
+            className="prf-strength__scale"
+            value={doneCount}
+            total={completeness.length}
+            segments={completeness.length}
+            ariaLabel={`${doneCount} of ${completeness.length} details on file`}
+          />
+
+          {missing.length > 0 ? (
+            <ul className="prf-strength__missing">
+              {missing.map(field => (
+                <li key={field.key}>
+                  {isEditing ? (
+                    <button
+                      type="button"
+                      className="prf-miss"
+                      onClick={() => fieldRefs[field.key].current?.focus()}
+                      aria-label={`Go to ${field.label.toLowerCase()}`}
+                    >
+                      <FieldGlyph kind={field.key as FieldKind} size={13} />
+                      {field.label}
+                    </button>
+                  ) : (
+                    <Tooltip label={`Add ${field.label.toLowerCase()}`}>
+                      <button
+                        type="button"
+                        className="prf-miss"
+                        onClick={() => handleStartEdit(field.key)}
+                        aria-label={`Add ${field.label.toLowerCase()}`}
+                      >
+                        <FieldGlyph kind={field.key as FieldKind} size={13} />
+                        {field.label}
+                      </button>
+                    </Tooltip>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <span className="prf-strength__done">
+              <CheckIcon size={14} />
+              Complete
+            </span>
+          )}
         </div>
       </section>
 
-      {isEditing ? (
-        <form className="prf-form" id="prf-profile-form" onSubmit={handleSave}>
-          <section className="ui-panel">
-            <header className="ui-panel__head">
-              <div className="ui-panel__titles">
-                <h2 className="ui-panel__title">Edit details</h2>
-                <span className="ui-panel__meta">Changes save to your account</span>
+      {/* ── Read mode · ruled record ─────────────────────────────────────── */}
+      {!isEditing && (
+        <div className="prf-record">
+          <section className="prf-block prf-enter" style={stagger(1)} aria-labelledby="prf-about">
+            <div className="prf-block__head">
+              <h2 className="prf-block__title" id="prf-about">About</h2>
+              {user.bio && (
+                <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={() => handleStartEdit('bio')}>
+                  <PencilIcon size={13} />
+                  Edit
+                </button>
+              )}
+            </div>
+            {user.bio ? (
+              <p className="prf-bio">{user.bio}</p>
+            ) : (
+              <div className="prf-block__empty">
+                <p className="prf-block__empty-text">No bio yet.</p>
+                <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={() => handleStartEdit('bio')}>
+                  Add a bio
+                </button>
               </div>
-            </header>
+            )}
+          </section>
 
-            <div className="ui-panel__body">
-              <div className="prf-edit-grid">
-                <div className="prf-edit-col">
-                  <section className="prf-edit-section">
-                    <h3 className="ui-h3 prf-section__title">Identity</h3>
-                    <div className="ui-form-row ui-form-row--2">
-                      <div className="prf-field">
-                        <label className="ui-label" htmlFor="prf-full-name">
-                          Full name <span className="prf-req" aria-hidden="true">*</span>
-                        </label>
-                        <input
-                          id="prf-full-name"
-                          ref={nameInputRef}
-                          className="ui-field"
-                          type="text"
-                          autoComplete="name"
-                          value={formData.name}
-                          onChange={e => setFormData({ ...formData, name: e.target.value })}
-                          required
-                          disabled={loading}
-                        />
-                      </div>
-                      <div className="prf-field">
-                        <label className="ui-label" htmlFor="prf-email">Email address</label>
-                        <input id="prf-email" className="ui-field" type="email" value={user.email} disabled />
-                        <p className="ui-hint">Managed by your college account.</p>
-                      </div>
-                    </div>
-                  </section>
+          <div className="prf-record__side">
+            <section className="prf-block prf-enter" style={stagger(2)} aria-labelledby="prf-contact">
+              <div className="prf-block__head">
+                <h2 className="prf-block__title" id="prf-contact">Contact</h2>
+              </div>
+              <ul className="prf-contact">
+                <li className="prf-contact__row">
+                  <span className="prf-contact__mark" aria-hidden="true">
+                    <FieldGlyph kind="email" size={16} />
+                  </span>
+                  <a className="ui-link prf-contact__value" href={`mailto:${user.email}`}>{user.email}</a>
+                  <Tooltip label={copied === 'email' ? 'Copied' : 'Copy email'}>
+                    <button
+                      type="button"
+                      className="ui-icon-btn prf-copy"
+                      onClick={() => copyValue(user.email, 'email')}
+                      aria-label="Copy email address"
+                    >
+                      {copied === 'email' ? <CheckIcon /> : <CopyIcon />}
+                    </button>
+                  </Tooltip>
+                </li>
+                <li className="prf-contact__row">
+                  <span className="prf-contact__mark" aria-hidden="true">
+                    <FieldGlyph kind="phone" size={16} />
+                  </span>
+                  {user.phone ? (
+                    <>
+                      <a className="ui-link prf-contact__value" href={`tel:${user.phone}`}>{user.phone}</a>
+                      <Tooltip label={copied === 'phone' ? 'Copied' : 'Copy phone'}>
+                        <button
+                          type="button"
+                          className="ui-icon-btn prf-copy"
+                          onClick={() => copyValue(user.phone as string, 'phone')}
+                          aria-label="Copy phone number"
+                        >
+                          {copied === 'phone' ? <CheckIcon /> : <CopyIcon />}
+                        </button>
+                      </Tooltip>
+                    </>
+                  ) : (
+                    <span className="prf-contact__value prf-contact__value--empty">Not provided</span>
+                  )}
+                </li>
+              </ul>
+            </section>
 
-                  <section className="prf-edit-section">
-                    <h3 className="ui-h3 prf-section__title">Contact</h3>
-                    <div className="prf-field">
-                      <label className="ui-label" htmlFor="prf-phone">
-                        Phone number <span className="prf-req" aria-hidden="true">*</span>
-                      </label>
-                      <input
-                        id="prf-phone"
-                        className="ui-field"
-                        type="tel"
-                        autoComplete="tel"
-                        value={formData.phone}
-                        onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                        required
-                        disabled={loading}
-                      />
-                    </div>
-                  </section>
+            <section className="prf-block prf-enter" style={stagger(3)} aria-labelledby="prf-account">
+              <div className="prf-block__head">
+                <h2 className="prf-block__title" id="prf-account">Account</h2>
+              </div>
+              <dl className="prf-acct">
+                <div className="prf-acct__cell">
+                  <dt className="prf-acct__label">Role</dt>
+                  <dd className="prf-acct__value">{roleLabel(user.role)}</dd>
                 </div>
+                <div className="prf-acct__cell">
+                  <dt className="prf-acct__label">Photo</dt>
+                  <dd className="prf-acct__value">{user.profileImage ? 'Uploaded' : 'Monogram'}</dd>
+                </div>
+              </dl>
+            </section>
+          </div>
+        </div>
+      )}
 
-                <div className="prf-edit-col">
-                  <section className="prf-edit-section">
-                    <h3 className="ui-h3 prf-section__title">
-                      {isStudent ? 'Academic record' : 'Department'}
-                    </h3>
-                    {isStudent ? (
-                      <>
-                        <div className="ui-form-row ui-form-row--2">
-                          <div className="prf-field">
-                            <label className="ui-label" htmlFor="prf-department">
-                              Department <span className="prf-req" aria-hidden="true">*</span>
-                            </label>
-                            <input
-                              id="prf-department"
-                              className="ui-field"
-                              type="text"
-                              value={formData.department}
-                              onChange={e => setFormData({ ...formData, department: e.target.value })}
-                              required
-                              disabled={loading}
-                            />
-                          </div>
-                          <div className="prf-field">
-                            <label className="ui-label" htmlFor="prf-semester">
-                              Semester <span className="prf-req" aria-hidden="true">*</span>
-                            </label>
-                            <input
-                              id="prf-semester"
-                              className="ui-field"
-                              type="number"
-                              min="1"
-                              max="10"
-                              value={formData.semester}
-                              onChange={e => setFormData({ ...formData, semester: e.target.value })}
-                              required
-                              disabled={loading}
-                            />
-                          </div>
-                        </div>
-                        <div className="ui-form-row ui-form-row--2">
-                          <div className="prf-field">
-                            <label className="ui-label" htmlFor="prf-university-id">
-                              University ID <span className="prf-req" aria-hidden="true">*</span>
-                            </label>
-                            <input
-                              id="prf-university-id"
-                              className="ui-field"
-                              type="text"
-                              value={formData.universityId}
-                              onChange={e => setFormData({ ...formData, universityId: e.target.value })}
-                              required
-                              disabled={loading}
-                            />
-                          </div>
-                          <div className="prf-field">
-                            <label className="ui-label" htmlFor="prf-enrollment">Enrollment number</label>
-                            <input
-                              id="prf-enrollment"
-                              className="ui-field"
-                              type="text"
-                              value={formData.enrollmentNumber}
-                              onChange={e => setFormData({ ...formData, enrollmentNumber: e.target.value })}
-                              disabled={loading}
-                              placeholder="e.g. 0901CS201045"
-                            />
-                          </div>
-                        </div>
-                      </>
-                    ) : (
+      {/* ── Edit mode · one sheet, two columns, rules between ───────────── */}
+      {isEditing && (
+        <form
+          className="ui-panel prf-sheet prf-enter"
+          id="prf-profile-form"
+          style={stagger(1)}
+          onSubmit={handleSave}
+        >
+          <div className="prf-sheet__cols">
+            <div className="prf-sheet__col">
+              <section className="prf-sheet__section">
+                <h2 className="prf-sheet__title">Identity</h2>
+                <div className="ui-form-row ui-form-row--2">
+                  <div className="prf-field">
+                    <label className="ui-label" htmlFor="prf-full-name">
+                      Full name <span className="prf-req" aria-hidden="true">*</span>
+                    </label>
+                    <input
+                      id="prf-full-name"
+                      ref={nameInputRef}
+                      className="ui-field"
+                      type="text"
+                      autoComplete="name"
+                      value={formData.name}
+                      onChange={e => setFormData({ ...formData, name: e.target.value })}
+                      required
+                      disabled={loading}
+                    />
+                  </div>
+                  <div className="prf-field">
+                    <div className="prf-field__labelrow">
+                      <label className="ui-label" htmlFor="prf-email">Email address</label>
+                      <Tooltip label="Managed by your college account">
+                        <span
+                          className="prf-field__note"
+                          role="img"
+                          aria-label="Managed by your college account"
+                          tabIndex={0}
+                        >
+                          <LockIcon />
+                        </span>
+                      </Tooltip>
+                    </div>
+                    <input id="prf-email" className="ui-field" type="email" value={user.email} disabled />
+                  </div>
+                </div>
+              </section>
+
+              <section className="prf-sheet__section">
+                <h2 className="prf-sheet__title">Contact</h2>
+                <div className="prf-field">
+                  <label className="ui-label" htmlFor="prf-phone">
+                    Phone number <span className="prf-req" aria-hidden="true">*</span>
+                  </label>
+                  <input
+                    id="prf-phone"
+                    ref={phoneInputRef}
+                    className="ui-field"
+                    type="tel"
+                    autoComplete="tel"
+                    value={formData.phone}
+                    onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                    required
+                    disabled={loading}
+                  />
+                </div>
+              </section>
+            </div>
+
+            <div className="prf-sheet__col">
+              <section className="prf-sheet__section">
+                <h2 className="prf-sheet__title">{isStudent ? 'Academic record' : 'Department'}</h2>
+                {isStudent ? (
+                  <>
+                    <div className="ui-form-row ui-form-row--2">
                       <div className="prf-field">
                         <label className="ui-label" htmlFor="prf-department">
                           Department <span className="prf-req" aria-hidden="true">*</span>
                         </label>
                         <input
                           id="prf-department"
+                          ref={departmentInputRef}
                           className="ui-field"
                           type="text"
                           value={formData.department}
@@ -481,32 +614,93 @@ export default function Profile() {
                           disabled={loading}
                         />
                       </div>
-                    )}
-                  </section>
-
-                  <section className="prf-edit-section">
-                    <h3 className="ui-h3 prf-section__title">About</h3>
-                    <div className="prf-field">
-                      <label className="ui-label" htmlFor="prf-bio">Bio</label>
-                      <textarea
-                        id="prf-bio"
-                        ref={bioInputRef}
-                        className="ui-field ui-field--area"
-                        rows={3}
-                        value={formData.bio}
-                        onChange={e => setFormData({ ...formData, bio: e.target.value })}
-                        disabled={loading}
-                        placeholder="Tell us about yourself..."
-                      />
-                      <p className="ui-hint">A sentence or two about your work, interests or role.</p>
+                      <div className="prf-field">
+                        <label className="ui-label" htmlFor="prf-semester">
+                          Semester <span className="prf-req" aria-hidden="true">*</span>
+                        </label>
+                        <input
+                          id="prf-semester"
+                          ref={semesterInputRef}
+                          className="ui-field"
+                          type="number"
+                          min="1"
+                          max="10"
+                          value={formData.semester}
+                          onChange={e => setFormData({ ...formData, semester: e.target.value })}
+                          required
+                          disabled={loading}
+                        />
+                      </div>
                     </div>
-                  </section>
-                </div>
-              </div>
-            </div>
-          </section>
+                    <div className="ui-form-row ui-form-row--2">
+                      <div className="prf-field">
+                        <label className="ui-label" htmlFor="prf-university-id">
+                          University ID <span className="prf-req" aria-hidden="true">*</span>
+                        </label>
+                        <input
+                          id="prf-university-id"
+                          ref={universityIdInputRef}
+                          className="ui-field"
+                          type="text"
+                          value={formData.universityId}
+                          onChange={e => setFormData({ ...formData, universityId: e.target.value })}
+                          required
+                          disabled={loading}
+                        />
+                      </div>
+                      <div className="prf-field">
+                        <label className="ui-label" htmlFor="prf-enrollment">Enrollment number</label>
+                        <input
+                          id="prf-enrollment"
+                          className="ui-field"
+                          type="text"
+                          value={formData.enrollmentNumber}
+                          onChange={e => setFormData({ ...formData, enrollmentNumber: e.target.value })}
+                          disabled={loading}
+                          placeholder="e.g. 0901CS201045"
+                        />
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="prf-field">
+                    <label className="ui-label" htmlFor="prf-department">
+                      Department <span className="prf-req" aria-hidden="true">*</span>
+                    </label>
+                    <input
+                      id="prf-department"
+                      ref={departmentInputRef}
+                      className="ui-field"
+                      type="text"
+                      value={formData.department}
+                      onChange={e => setFormData({ ...formData, department: e.target.value })}
+                      required
+                      disabled={loading}
+                    />
+                  </div>
+                )}
+              </section>
 
-          <footer className="prf-form__foot">
+              <section className="prf-sheet__section">
+                <h2 className="prf-sheet__title">About</h2>
+                <div className="prf-field">
+                  <label className="ui-label" htmlFor="prf-bio">Bio</label>
+                  <textarea
+                    id="prf-bio"
+                    ref={bioInputRef}
+                    className="ui-field ui-field--area"
+                    rows={3}
+                    value={formData.bio}
+                    onChange={e => setFormData({ ...formData, bio: e.target.value })}
+                    disabled={loading}
+                    placeholder="Research, interests, responsibilities"
+                  />
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <footer className="prf-sheet__foot">
             {isProfileComplete && (
               <button type="button" className="ui-btn ui-btn--ghost" onClick={handleCancel} disabled={loading}>
                 Cancel
@@ -517,175 +711,11 @@ export default function Profile() {
             </button>
           </footer>
         </form>
-      ) : (
-        <div className="prf-grid">
-          <section className="ui-panel">
-            <header className="ui-panel__head">
-              <div className="ui-panel__titles">
-                <h2 className="ui-panel__title">Profile record</h2>
-              </div>
-            </header>
-            <div className="ui-panel__body prf-record__body">
-              <section className="prf-section">
-                <h3 className="ui-h3 prf-section__title">About</h3>
-                {user.bio ? (
-                  <p className="prf-bio">{user.bio}</p>
-                ) : (
-                  <div className="prf-empty">
-                    <p className="prf-empty__text">
-                      No bio yet. A short note helps coordinators and teammates know what you work on.
-                    </p>
-                    <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={() => handleStartEdit('bio')}>
-                      Add a bio
-                    </button>
-                  </div>
-                )}
-              </section>
-
-              {(isStudent || user.department) && (
-                <section className="prf-section">
-                  <h3 className="ui-h3 prf-section__title">
-                    {isStudent ? 'Academic record' : 'Department'}
-                  </h3>
-                  {isStudent ? (
-                    <dl className="prf-facts">
-                      {user.department && <Fact label="Department" value={user.department} />}
-                      <Fact label="Semester" value={user.semester} />
-                      <Fact label="University ID" value={user.universityId} />
-                      <Fact label="Enrollment no." value={user.enrollmentNumber} />
-                    </dl>
-                  ) : (
-                    <p className="prf-record__value">{user.department}</p>
-                  )}
-                </section>
-              )}
-            </div>
-          </section>
-
-          <div className="prf-col">
-            <section className="ui-panel">
-              <header className="ui-panel__head">
-                <div className="ui-panel__titles">
-                  <h2 className="ui-panel__title">Contact</h2>
-                </div>
-              </header>
-              <div className="ui-panel__body">
-                <dl className="prf-facts">
-                  <div className="prf-fact">
-                    <dt className="prf-fact__label">Email</dt>
-                    <dd className="prf-fact__value">
-                      <a className="ui-link prf-fact__link" href={`mailto:${user.email}`}>{user.email}</a>
-                      <button
-                        type="button"
-                        className="ui-icon-btn prf-copy"
-                        onClick={handleCopyEmail}
-                        aria-label="Copy email address"
-                        title="Copy email address"
-                      >
-                        {copied ? <CheckIcon /> : <CopyIcon />}
-                      </button>
-                    </dd>
-                  </div>
-                  <div className="prf-fact">
-                    <dt className="prf-fact__label">Phone</dt>
-                    <dd className="prf-fact__value">
-                      {user.phone ? (
-                        <a className="ui-link prf-fact__link" href={`tel:${user.phone}`}>{user.phone}</a>
-                      ) : (
-                        <span className="prf-muted">Not provided</span>
-                      )}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-            </section>
-
-            <section className="ui-panel">
-              <header className="ui-panel__head">
-                <div className="ui-panel__titles">
-                  <h2 className="ui-panel__title">Account</h2>
-                </div>
-              </header>
-              <div className="ui-panel__body">
-                <dl className="prf-facts">
-                  <Fact label="Role" value={roleLabel(user.role)} />
-                  {memberSince && <Fact label="Member since" value={memberSince} />}
-                  <Fact label="Photo" value={user.profileImage ? 'Uploaded image' : 'Initials monogram'} />
-                </dl>
-              </div>
-            </section>
-          </div>
-        </div>
       )}
 
       <span className="ui-visually-hidden" aria-live="polite">
-        {copied ? 'Email address copied' : ''}
+        {copied === 'email' ? 'Email address copied' : copied === 'phone' ? 'Phone number copied' : ''}
       </span>
     </div>
-  );
-}
-
-function Fact({ label, value }: { label: string; value?: string | number | null }) {
-  const shown = value === 0 ? '0' : value ? String(value) : '';
-  return (
-    <div className="prf-fact">
-      <dt className="prf-fact__label">{label}</dt>
-      <dd className="prf-fact__value">
-        {shown || <span className="prf-muted">Not provided</span>}
-      </dd>
-    </div>
-  );
-}
-
-/* ── Icons · 24px grid, 1.7 stroke, currentColor ─────────────────────────── */
-
-function PencilIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
-      <path
-        d="M4 20h4.1L19 9.1a2.1 2.1 0 0 0-3-3L5.1 17 4 20Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <path d="m14.5 7.5 2 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function CameraIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="3.2" y="6.8" width="17.6" height="13" rx="2.4" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M8.6 6.8 10 4.2h4l1.4 2.6" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-      <circle cx="12" cy="13.2" r="3.3" stroke="currentColor" strokeWidth="1.7" />
-    </svg>
-  );
-}
-
-function CopyIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="m5 12.5 4.5 4.5L19 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function AlertIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="8.6" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M12 7.6v5.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      <circle cx="12" cy="16.2" r="1" fill="currentColor" />
-    </svg>
   );
 }

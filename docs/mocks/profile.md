@@ -8,25 +8,36 @@ Everything below is computed from the response those calls already return.
 
 | What | Where | Why it is client-side today | Suggested API |
 |---|---|---|---|
-| Completeness percentage, meter fill and "Missing …" label | Identity band | No completeness field exists. It is derived from `name`, `department`, `phone`, plus `universityId` and `semester` for students — the exact predicate behind `isProfileComplete()`. Marked `// MOCK:` in `Profile.tsx` | Return `completeness: { percent, missing[] }` (or a required-field list) from `GET /auth/me` so the rule lives in one place |
-| "Member since" date | Account panel | `createdAt` is returned by Mongoose on the user document but is not in the documented `User` shape or `frontend/src/types`. The row is omitted when the field is missing. Marked `// MOCK:` | Add `createdAt` to the documented user payload and to the `User` type |
-| Live identity preview while editing | Identity band above the form | Reads the unsaved `formData` (falling back to the saved user) so the name and academic line reflect typing; it is a preview, not a persisted value | Not needed — presentation only |
-| Photo state ("Uploaded image" / "Initials monogram") | Account panel | Derived from the presence of `profileImage`; there is no separate media record | Not needed |
-| Copy-email button and "Email address copied" announcement | Contact panel | Client clipboard only. Action is a progressive enhancement: the `mailto:` link remains and failures are silent | Not needed |
-| Initials monogram | Identity band, UserDisplay, UserSelect | Derived from the name's first two words when `profileImage` is null. `profileImage` itself comes from the API | Not needed |
+| Completeness ring, "N of 5", tick scale and the missing-field marks | Identity plate, strength strip | No completeness field exists. Derived from `name`, `department`, `phone`, plus `universityId` and `semester` for students — the exact predicate behind `isProfileComplete()`. Marked `// MOCK:` in `Profile.tsx` | Return `completeness: { percent, missing[] }` (or a required-field list) from `GET /auth/me` so the rule lives in one place |
+| Live completeness while editing | Strength strip above the open sheet | Reads the unsaved `formData` so the gauge answers the fields directly above it. Presentation only — nothing is persisted until save | Not needed |
+| "Member since" date plate | Identity plate, right side | `createdAt` is returned by Mongoose on the user document but is not in the documented `User` shape or `frontend/src/types`. The plate is omitted when the field is missing. Marked `// MOCK:` | Add `createdAt` to the documented user payload and to the `User` type |
+| Live identity preview while editing | Identity plate | Reads the unsaved `formData` (falling back to the saved user) so the name, role and fact rail reflect typing; it is a preview, not a persisted value | Not needed |
+| Photo state ("Uploaded" / "Monogram") | Account strip | Derived from the presence of `profileImage`; there is no separate media record | Not needed |
+| Copy affordances and the "Email address copied" / "Phone number copied" announcement | Contact block | Client clipboard only. Prospective enhancement: the `mailto:` / `tel:` links remain and failures are silent. The phone copy is new; it does not replace the link | Not needed |
+| Initials monogram | Identity plate, UserDisplay, UserSelect | Derived from the name's first two words when `profileImage` is null. `profileImage` itself comes from the API | Not needed |
+| Role label and role mark | Plate, Account strip, UserDisplay, UserSelect | The API returns the `role` key; the label and the kind glyph are a local map (`pages/Profile/labels.ts`). Read-only vocabulary | Not needed |
+| Missing-field marks opening the sheet at that field | Strength strip → edit sheet | Client focus management only. It reads the same required-field list as the gauge; no extra request | Not needed |
+
+## Client-side presentation decisions (no API impact)
+
+- **Read mode is the default, including for an incomplete profile.** The identity plate shows the
+  holes (dashed marks) and the ring, and the primary action is "Edit profile". Previously an
+  incomplete profile opened straight into the form and could not be closed, which left the strength
+  marks unreachable. Validation, the required attributes and the "Cancel only when complete" rule
+  are unchanged.
+- **The incomplete-profile notice was removed.** Its sentence ("Profile incomplete. … are still
+  needed") is now the ring, the "N of 5" ratio and the named marks in the strength strip. Nothing
+  about the requirement set changed.
 
 ## Verification-only substitutes
 
-The screenshots for the incomplete, save-error and save-success states were produced with Puppeteer
-request interception (an empty `phone`, a 400 from `PATCH`, a 200 carrying a bio). Those responses
-are **not** shipped code and no seed record was written. The real pages render from the API.
+Screenshots of the incomplete state (80%, one missing "Phone number" mark) were produced with
+Puppeteer request interception on `GET /auth/me` (a null `phone`). That response is **not** shipped
+code and no seed record was written. The real page renders from the API.
 
-The temporary dev preview entry used to capture screenshots while other agents' imports were
-incomplete (`frontend/__profile-preview.html`, `src/pages/Profile/__preview.tsx`) has been deleted.
-
-## Integration note
-
-`UserDisplay` is still exported with the same props and guards, but no page in the current tree
-imports it any more — other areas replaced it with their own person markup while this work was in
-progress. `UserSelect` is still imported by `ClubManagement`, `ProjectManagement` and
-`ProjectMentors`; it was checked inside the club "Add member" modal.
+`UserDisplay` is not imported by any page in the current tree; it was verified on a temporary,
+unrouted preview page (`frontend/__person-preview.html`, `src/pages/Profile/__preview.tsx`) that
+rendered real `GET /users?role=student` records plus two deliberately partial copies of them, to
+confirm it does not throw on a populated document missing a field. Both files were deleted after
+the screenshot. `UserSelect` is imported by `ClubManagement`, `ProjectManagement` and
+`ProjectMentors`; it was checked inside the club "Add member" and "Coordinator" modals.

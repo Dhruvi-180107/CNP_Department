@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { ClubManagement } from '../../components/clubs/ClubManagement';
 import { MemberItem } from '../../components/clubs/MemberItem';
+import { Crest } from '../../components/clubs/Crest';
+import { RoleMark, type RoleKind } from '../../components/clubs/RoleMark';
 import { EventCard } from '../../components/events/EventCard';
 import { EventForm } from '../../components/events/EventForm';
 import { partitionEvents, useLocalDay } from '../../eventDate';
+import { AvatarStack, Counter, DateTile, Ring, Segments } from '../../components/ui/vis';
+import { Tooltip } from '../../components/ui/Tooltip';
 import { usePageLoading } from '../../context/LoadingContext';
 import './clubs.css';
 
@@ -27,12 +32,6 @@ const CalendarIcon = () => (
     <path d="M3.5 10h17M8 3.5v3M16 3.5v3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
   </svg>
 );
-const CenterIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path d="M12 3.5 20 8v8l-8 4.5L4 16V8l8-4.5Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-    <path d="M12 12v8.5M12 12 4 8M12 12l8-4" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-  </svg>
-);
 const CloseIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
@@ -44,30 +43,22 @@ const MailIcon = () => (
     <path d="m4.5 7 7.5 6 7.5-6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
   </svg>
 );
-
-function monogram(name: string) {
-  const cleaned = name
-    .replace(/\b(club|society|committee|association|collective|group|cell)\b/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  const words = cleaned.split(' ').filter(Boolean);
-  if (!words.length) return name.trim().slice(0, 2).toUpperCase();
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return (words[0][0] + words[1][0]).toUpperCase();
-}
+const SearchIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" strokeWidth="1.7" />
+    <path d="M15.5 15.5 20 20" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+  </svg>
+);
 
 function initials(name?: string) {
   if (!name) return '?';
   return name.replace(/^Dr\.\s*/i, '').trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join('').toUpperCase();
 }
 
-const monthShort = (value?: string) =>
-  value ? new Date(value).toLocaleString('en-US', { month: 'short' }) : '';
-const dayOf = (value?: string) => (value ? new Date(value).getDate() : '');
 const timeOf = (value?: string) =>
   value ? new Date(value).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
 const fullDate = (value?: string) =>
-  value ? new Date(value).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+  value ? new Date(value).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
 
 export default function ClubDetails() {
   const { id } = useParams();
@@ -88,12 +79,15 @@ export default function ClubDetails() {
   const [memberQuery, setMemberQuery] = useState('');
   const [deletingEvent, setDeletingEvent] = useState<any>(null);
   const [deleting, setDeleting] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
   const loadClubAndMembers = async () => {
     setPageLoading(true);
     try {
-      const c = await api<any>('GET', `/clubs`).then(res => res.data.find((x: any) => x._id === id));
-      if (!c) throw new Error("Not found");
+      // One club, with its counts and the caller's own membership, from one request.
+      const c = await api<any>('GET', `/clubs/${id}`).then(res => res.data);
+      if (!c) throw new Error('Not found');
       setClub(c);
 
       const mems = await api<any>('GET', `/clubs/${id}/members`).then(res => res.data);
@@ -110,7 +104,7 @@ export default function ClubDetails() {
 
       if (user?.role === 'student') {
         const reqs = await api<any>('GET', '/join-requests/student').then(res => res.data);
-        const isMember = mems.some((m: any) => m.studentId._id === user._id);
+        const isMember = Boolean(c.myMembership) || mems.some((m: any) => m.studentId?._id === user._id);
         const hasPending = reqs.some((r: any) => r.clubId?._id === id && r.status === 'pending');
         if (isMember) setJoinStatus('member');
         else if (hasPending) setJoinStatus('pending');
@@ -159,6 +153,23 @@ export default function ClubDetails() {
     return () => window.removeEventListener('keydown', onKey);
   }, [showEventForm]);
 
+  /* Leaving is the same door as joining: DELETE /clubs/:id/join. Core-team seats
+     are removed by a coordinator, so the API refuses those (409) and we do not
+     offer the action at all. */
+  const handleLeave = async () => {
+    try {
+      setLeaving(true);
+      await api('DELETE', `/clubs/${id}/join`);
+      setJoinStatus('none');
+      setConfirmLeave(false);
+      await loadClubAndMembers();
+    } catch (e: any) {
+      alert(e.message || 'Could not leave the club');
+    } finally {
+      setLeaving(false);
+    }
+  };
+
   const handleJoin = async () => {
     try {
       await api('POST', `/clubs/${id}/join`);
@@ -172,7 +183,7 @@ export default function ClubDetails() {
   const coreTeam = useMemo(() => members.filter((m) => m.membershipType === 'core_team'), [members]);
   const regularMembers = useMemo(() => members.filter((m) => m.membershipType !== 'core_team'), [members]);
 
-  // MOCK: the composition meter counts the members array; the API exposes no aggregate on this route.
+  // MOCK: the composition scale counts the members array; the API exposes no aggregate on this route.
   // Suggested API: include coreTeamCount / memberCount on GET /clubs/:id
 
   const sortedMembers = useMemo(() => {
@@ -198,21 +209,29 @@ export default function ClubDetails() {
     return (
       <div className="clubs-page clubs-detail" aria-busy="true" aria-label="Loading club">
         <div className="ui-skel clubs-detail__loading-back" />
-        <div className="clubs-board clubs-board--loading">
-          <div className="clubs-skel">
+        <div className="clubs-plate clubs-plate--loading">
+          <div className="clubs-plate__body">
             <div className="ui-skel clubs-skel__plate" />
             <div className="clubs-skel__body">
               <div className="ui-skel clubs-skel__line clubs-skel__line--title" />
               <div className="ui-skel clubs-skel__line" />
-              <div className="ui-skel clubs-skel__line clubs-skel__line--short" />
             </div>
           </div>
-          <div className="clubs-skel clubs-skel--row">
-            <div className="ui-skel clubs-skel__plate clubs-skel__plate--sm" />
-            <div className="clubs-skel__body">
-              <div className="ui-skel clubs-skel__line clubs-skel__line--short" />
+        </div>
+        <div className="clubs-split">
+          <div className="clubs-main">
+            <div className="ui-panel">
+              <div className="clubs-skel clubs-skel--row">
+                <div className="ui-skel clubs-skel__plate clubs-skel__plate--sm" />
+                <div className="clubs-skel__body">
+                  <div className="ui-skel clubs-skel__line clubs-skel__line--short" />
+                </div>
+              </div>
             </div>
           </div>
+          <aside className="clubs-aside" aria-hidden="true">
+            <div className="ui-panel" style={{ minHeight: 120 }} />
+          </aside>
         </div>
       </div>
     );
@@ -231,18 +250,41 @@ export default function ClubDetails() {
   const regularCount = regularMembers.length;
   const coreShare = members.length ? coreCount / members.length : 0;
   const nextEvent = upcomingEvents[0] || null;
+  const eventList = clubEventTab === 'upcoming' ? upcomingEvents : pastEvents;
 
-  const stateTag = (() => {
-    if (isClubAdmin) return { text: 'Club admin', tone: 'ui-tag--plain' };
-    if (isCoordinator) return { text: 'Coordinator', tone: 'is-accent' };
-    if (joinStatus === 'member') {
-      return myMembership?.membershipType === 'core_team'
-        ? { text: myMembership.position ? `Core team · ${myMembership.position}` : 'Core team', tone: 'is-accent' }
-        : { text: 'Member', tone: 'is-positive' };
-    }
-    if (joinStatus === 'pending') return { text: 'Request pending', tone: 'is-warning' };
-    return null;
-  })();
+  const rosterPreview = members
+    .map((m) => ({
+      name: m.studentId?.name || '',
+      image: m.studentId?.profileImage ?? undefined,
+      core: m.membershipType === 'core_team',
+    }))
+    .filter((p) => p.name);
+
+  const myPosition =
+    myMembership?.membershipType === 'core_team' && myMembership?.position &&
+    myMembership.position.toLowerCase() !== 'member'
+      ? myMembership.position
+      : null;
+
+  const state: { role: RoleKind; label: string } | null = isClubAdmin
+    ? { role: 'admin', label: 'Club admin' }
+    : isCoordinator
+      ? { role: 'coordinator', label: 'Coordinator' }
+      : joinStatus === 'member'
+        ? myMembership?.membershipType === 'core_team'
+          ? { role: 'core', label: myPosition ? `Core team · ${myPosition}` : 'Core team' }
+          : { role: 'member', label: 'Member' }
+        : joinStatus === 'pending'
+          ? { role: 'pending', label: 'Request pending' }
+          : null;
+
+  const recordFacts = [
+    club.createdAt ? `created ${fullDate(club.createdAt)}` : null,
+    coordinator?.name ? `faculty coordinator ${coordinator.name}` : 'no faculty coordinator',
+    joinStatus === 'member' && myMembership?.joinedAt ? `you joined ${fullDate(myMembership.joinedAt)}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <div className="clubs-page clubs-detail">
@@ -251,118 +293,207 @@ export default function ClubDetails() {
         All clubs
       </button>
 
-      <section className="clubs-hero" aria-labelledby="club-name">
-        {club.coverImage && (
-          <img className="clubs-hero__cover" src={club.coverImage} alt="" />
-        )}
+      <section className="clubs-plate clubs-rise" style={{ '--i': 0 } as CSSProperties} aria-labelledby="club-name">
+        {club.coverImage && <img className="clubs-plate__cover" src={club.coverImage} alt="" />}
 
-        <div>
-          {club.logo ? (
-            <img src={club.logo} alt="" className="clubs-mono clubs-mono--image" />
-          ) : (
-            <span className="clubs-mono" aria-hidden="true">{monogram(club.name)}</span>
-          )}
-        </div>
-
-        <div className="clubs-hero__main">
-          <h1 id="club-name" className="clubs-hero__title">{club.name}</h1>
-
-          <div className="clubs-hero__facts">
-            {coordinator?.name ? (
-              <span className="clubs-hero__fact">
-                <span className="clubs-card__coord">
-                  {coordinator.profileImage ? (
-                    <img src={coordinator.profileImage} alt="" className="clubs-card__coord-face" />
-                  ) : (
-                    <span className="clubs-card__coord-face" aria-hidden="true">{initials(coordinator.name).slice(0, 1)}</span>
-                  )}
-                  <span className="clubs-card__coord-text">
-                    <span className="clubs-card__coord-name">{coordinator.name}</span>
-                    {coordinator.department && <span className="clubs-card__coord-dept">{coordinator.department}</span>}
-                  </span>
-                </span>
-              </span>
-            ) : (
-              <span className="clubs-hero__fact">No faculty coordinator assigned</span>
-            )}
-
-            <span className="clubs-hero__fact">
-              <UsersIcon />
-              {members.length} {members.length === 1 ? 'member' : 'members'}
+        <div className="clubs-plate__body">
+          <Tooltip label={recordFacts}>
+            <span className="clubs-plate__crest">
+              <Crest name={club.name} image={club.logo} size={92} lit={joinStatus === 'member'} />
             </span>
+          </Tooltip>
 
-            {coreCount > 0 && (
-              <span className="clubs-hero__fact">
-                <CenterIcon />
-                {coreCount} core team
+          <div className="clubs-plate__id">
+            <div className="clubs-plate__title-row">
+              <h1 id="club-name" className="clubs-plate__name">{club.name}</h1>
+              {state ? (
+                <Tooltip
+                  label={
+                    joinStatus === 'member' && myMembership?.joinedAt
+                      ? `${state.label} · joined ${fullDate(myMembership.joinedAt)}`
+                      : state.label
+                  }
+                >
+                  <span className="clubs-state" tabIndex={0}>
+                    <RoleMark role={state.role} label={state.label} quiet size={14} />
+                    <span>{state.label}</span>
+                  </span>
+                </Tooltip>
+              ) : null}
+            </div>
+
+            <div className="clubs-plate__facts">
+              {coordinator?.name ? (
+                <Tooltip label={`${coordinator.name}${coordinator.department ? ` · ${coordinator.department}` : ''}`}>
+                  {coordinator.email ? (
+                    <a
+                      className="clubs-chip"
+                      href={`mailto:${coordinator.email}`}
+                      aria-label={`Faculty coordinator ${coordinator.name}, email ${coordinator.email}`}
+                    >
+                      {coordinator.profileImage ? (
+                        <img src={coordinator.profileImage} alt="" className="clubs-chip__face" />
+                      ) : (
+                        <span className="clubs-chip__face" aria-hidden="true">{initials(coordinator.name).slice(0, 1)}</span>
+                      )}
+                      <span className="clubs-chip__name">{coordinator.name}</span>
+                      <MailIcon />
+                    </a>
+                  ) : (
+                    <span className="clubs-chip" aria-label={`Faculty coordinator ${coordinator.name}`}>
+                      {coordinator.profileImage ? (
+                        <img src={coordinator.profileImage} alt="" className="clubs-chip__face" />
+                      ) : (
+                        <span className="clubs-chip__face" aria-hidden="true">{initials(coordinator.name).slice(0, 1)}</span>
+                      )}
+                      <span className="clubs-chip__name">{coordinator.name}</span>
+                    </span>
+                  )}
+                </Tooltip>
+              ) : (
+                <Tooltip label="Join requests wait for a coordinator">
+                  <span className="clubs-chip clubs-chip--void" aria-label="No faculty coordinator">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="clubs-void__mark">
+                      <path d="M5 19 19 5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                      <rect x="4.5" y="4.5" width="15" height="15" rx="2" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2.4 2.6" />
+                    </svg>
+                  </span>
+                </Tooltip>
+              )}
+
+              {rosterPreview.length > 0 ? (
+                <AvatarStack people={rosterPreview} max={6} size="sm" />
+              ) : null}
+
+              <span className="clubs-plate__count">
+                <Counter value={members.length} className="clubs-plate__n" />
+                <span>{members.length === 1 ? 'member' : 'members'}</span>
               </span>
-            )}
-          </div>
-        </div>
+            </div>
 
-        <div className="clubs-hero__actions">
-          {stateTag && <span className={`ui-tag ${stateTag.tone}`}>{stateTag.text}</span>}
-          {user?.role === 'student' && joinStatus === 'none' && (
-            <button type="button" className="ui-btn ui-btn--primary" onClick={handleJoin}>
-              Join club
-            </button>
-          )}
-          {user?.role === 'student' && joinStatus === 'pending' && (
-            <span className="ui-meta">Waiting for the coordinator</span>
-          )}
+            {club.description ? (
+              <Tooltip label={club.description} disabled={club.description.length < 90}>
+                <p className="clubs-plate__desc">{club.description}</p>
+              </Tooltip>
+            ) : null}
+          </div>
+
+          <div className="clubs-plate__gauge">
+            <Ring value={coreShare} size={72} label={`${coreCount}/${members.length}`} caption="core" />
+            {user?.role === 'student' && joinStatus === 'none' ? (
+              <button type="button" className="ui-btn ui-btn--primary ui-btn--sm" onClick={handleJoin}>
+                Join club
+              </button>
+            ) : null}
+            {user?.role === 'student' &&
+            joinStatus === 'member' &&
+            myMembership?.membershipType !== 'core_team' ? (
+              confirmLeave ? (
+                <span className="clubs-leave" role="group" aria-label="Confirm leaving this club">
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn--danger ui-btn--sm"
+                    onClick={handleLeave}
+                    disabled={leaving}
+                  >
+                    {leaving ? 'Leaving…' : 'Confirm leave'}
+                  </button>
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn--quiet ui-btn--sm"
+                    onClick={() => setConfirmLeave(false)}
+                    disabled={leaving}
+                  >
+                    Stay
+                  </button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--quiet ui-btn--sm"
+                  onClick={() => setConfirmLeave(true)}
+                  title="Leave this club; you can request to join again"
+                >
+                  Leave club
+                </button>
+              )
+            ) : null}
+          </div>
         </div>
       </section>
 
-      <div className="ui-stats clubs-stats">
-        <div className="ui-stat">
-          <div className="ui-stat__value">{members.length}</div>
-          <div className="ui-stat__label">Members</div>
+      {canManage && (
+        <div className="clubs-rise" style={{ '--i': 1 } as CSSProperties}>
+          <ClubManagement club={club} onUpdate={loadClubAndMembers} />
         </div>
-        <div className="ui-stat">
-          <div className="ui-stat__value">{coreCount}</div>
-          <div className="ui-stat__label">Core team</div>
-        </div>
-        <div className="ui-stat">
-          <div className="ui-stat__value">{upcomingEvents.length}</div>
-          <div className="ui-stat__label">Upcoming events</div>
-        </div>
-        <div className="ui-stat">
-          <div className="ui-stat__value">{club.createdAt ? new Date(club.createdAt).getFullYear() : '—'}</div>
-          <div className="ui-stat__label">Created</div>
-        </div>
-      </div>
+      )}
 
       <div className="clubs-split">
         <div className="clubs-main">
-          <section className="ui-panel" aria-labelledby="club-about-title">
+          <section
+            className="ui-panel clubs-rise"
+            style={{ '--i': 2 } as CSSProperties}
+            id="club-members"
+            aria-labelledby="club-members-title"
+          >
             <header className="ui-panel__head clubs-head">
               <div className="ui-panel__titles">
-                <h2 id="club-about-title" className="ui-panel__title">About</h2>
+                <h2 id="club-members-title" className="ui-panel__title">Members</h2>
+                <span className="ui-panel__meta">{members.length}</span>
               </div>
+              {members.length > 6 && (
+                <div className="ui-search clubs-members__search">
+                  <SearchIcon />
+                  <input
+                    className="ui-field"
+                    type="search"
+                    value={memberQuery}
+                    onChange={(e) => setMemberQuery(e.target.value)}
+                    placeholder="Find a member"
+                    aria-label="Search members"
+                  />
+                </div>
+              )}
             </header>
-            <div className="ui-panel__body">
-              <p className="clubs-prose">{club.description || 'This club has not written a description yet.'}</p>
-              {club.images && club.images.length > 0 && (
-                <div className="clubs-gallery">
-                  {club.images.map((img: any, i: number) => (
-                    <img
-                      key={i}
-                      src={typeof img === 'string' ? img : img.url}
-                      alt={`${club.name} gallery image ${i + 1}`}
+
+            <div className="ui-panel__body ui-panel__body--flush">
+              {shownMembers.length > 0 ? (
+                <div className="clubs-members">
+                  {shownMembers.map((m) => (
+                    <MemberItem
+                      key={m._id}
+                      m={m}
+                      clubId={club._id}
+                      canManage={canManage}
+                      onRefresh={loadClubAndMembers}
                     />
                   ))}
+                </div>
+              ) : (
+                <div className="ui-panel__body">
+                  <div className="ui-empty clubs-empty-inline">
+                    <span className="ui-empty__mark"><UsersIcon /></span>
+                    <p className="ui-empty__title">
+                      {members.length ? 'No member matches that search' : 'No members yet'}
+                    </p>
+                    {!members.length ? (
+                      <p className="ui-empty__text">Students join from the directory; approved requests land here.</p>
+                    ) : null}
+                  </div>
                 </div>
               )}
             </div>
           </section>
 
-          {canManage && <ClubManagement club={club} onUpdate={loadClubAndMembers} />}
-
-          <section className="ui-panel" aria-labelledby="club-events-title">
+          <section
+            className="ui-panel clubs-rise"
+            style={{ '--i': 3 } as CSSProperties}
+            aria-labelledby="club-events-title"
+          >
             <header className="ui-panel__head clubs-head">
               <div className="ui-panel__titles">
                 <h2 id="club-events-title" className="ui-panel__title">Events</h2>
-                <span className="ui-panel__meta">{upcomingEvents.length} upcoming · {pastEvents.length} past</span>
+                <span className="ui-panel__meta">{eventList.length}</span>
               </div>
               <div className="clubs-members__tools">
                 <div className="ui-seg" role="group" aria-label="Event period">
@@ -390,9 +521,9 @@ export default function ClubDetails() {
 
             <div className="ui-panel__body ui-panel__body--flush">
               <div className="ui-panel__body">
-                {(clubEventTab === 'upcoming' ? upcomingEvents : pastEvents).length > 0 ? (
+                {eventList.length > 0 ? (
                   <div className="clubs-events">
-                    {(clubEventTab === 'upcoming' ? upcomingEvents : pastEvents).map(e => (
+                    {eventList.map((e) => (
                       <EventCard
                         key={e._id}
                         event={{
@@ -401,7 +532,7 @@ export default function ClubDetails() {
                         }}
                         canManage={canManage}
                         isPast={clubEventTab === 'past'}
-                        onEdit={evt => {
+                        onEdit={(evt) => {
                           setEditingEvent(evt);
                           setShowEventForm(true);
                         }}
@@ -415,15 +546,8 @@ export default function ClubDetails() {
                 ) : (
                   <div className="ui-empty clubs-empty-inline">
                     <span className="ui-empty__mark"><CalendarIcon /></span>
-                    <p className="ui-empty__title">
-                      No {clubEventTab} events
-                    </p>
-                    <p className="ui-empty__text">
-                      {clubEventTab === 'upcoming'
-                        ? 'Nothing is scheduled. Events added here appear on the department calendar as well.'
-                        : 'Past events will be listed here once the first one has run.'}
-                    </p>
-                    {canManage && clubEventTab === 'upcoming' && (
+                    <p className="ui-empty__title">No {clubEventTab} events</p>
+                    {canManage && clubEventTab === 'upcoming' ? (
                       <button
                         type="button"
                         className="ui-btn ui-btn--quiet ui-btn--sm"
@@ -431,72 +555,43 @@ export default function ClubDetails() {
                       >
                         Add event
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 )}
               </div>
             </div>
           </section>
 
-          <section className="ui-panel" id="club-members" aria-labelledby="club-members-title">
-            <header className="ui-panel__head clubs-head">
-              <div className="ui-panel__titles">
-                <h2 id="club-members-title" className="ui-panel__title">Members</h2>
-                <span className="ui-panel__meta">{members.length}</span>
-              </div>
-              {members.length > 6 && (
-                <div className="ui-search clubs-members__search">
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" strokeWidth="1.7" />
-                    <path d="M15.5 15.5 20 20" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-                  </svg>
-                  <input
-                    className="ui-field"
-                    type="search"
-                    value={memberQuery}
-                    onChange={(e) => setMemberQuery(e.target.value)}
-                    placeholder="Find a member"
-                    aria-label="Search members"
-                  />
+          {(club.images && club.images.length > 0) && (
+            <section
+              className="ui-panel clubs-rise"
+              style={{ '--i': 4 } as CSSProperties}
+              aria-labelledby="club-gallery-title"
+            >
+              <header className="ui-panel__head clubs-head">
+                <div className="ui-panel__titles">
+                  <h2 id="club-gallery-title" className="ui-panel__title">Gallery</h2>
+                  <span className="ui-panel__meta">{club.images.length}</span>
                 </div>
-              )}
-            </header>
-
-            <div className="ui-panel__body ui-panel__body--flush">
-              {shownMembers.length > 0 ? (
-                <div className="clubs-members">
-                  {shownMembers.map(m => (
-                    <MemberItem
-                      key={m._id}
-                      m={m}
-                      clubId={club._id}
-                      canManage={canManage}
-                      onRefresh={loadClubAndMembers}
+              </header>
+              <div className="ui-panel__body">
+                <div className="clubs-gallery">
+                  {club.images.map((img: any, i: number) => (
+                    <img
+                      key={i}
+                      src={typeof img === 'string' ? img : img.url}
+                      alt={`${club.name} gallery image ${i + 1}`}
                     />
                   ))}
                 </div>
-              ) : (
-                <div className="ui-panel__body">
-                  <div className="ui-empty clubs-empty-inline">
-                    <span className="ui-empty__mark"><UsersIcon /></span>
-                    <p className="ui-empty__title">
-                      {members.length ? 'No member matches that search' : 'No members yet'}
-                    </p>
-                    <p className="ui-empty__text">
-                      {members.length
-                        ? 'Try the full name, the department, or the email address.'
-                        : 'Students join from the directory and land in the join requests queue for approval.'}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
+              </div>
+            </section>
+          )}
         </div>
 
-        <aside className="clubs-aside" aria-label="Club details">
+        <aside className="clubs-aside" aria-label="Club instruments">
           {nextEvent && (
-            <section className="ui-panel">
+            <section className="ui-panel clubs-rise" style={{ '--i': 5 } as CSSProperties}>
               <header className="ui-panel__head clubs-head">
                 <div className="ui-panel__titles">
                   <h2 className="ui-panel__title">Next up</h2>
@@ -504,11 +599,8 @@ export default function ClubDetails() {
               </header>
               <div className="ui-panel__body ui-panel__body--tight">
                 <div className="clubs-next">
-                  <div className="clubs-next__date">
-                    <span className="clubs-next__day">{dayOf(nextEvent.eventDate || nextEvent.date)}</span>
-                    <span className="clubs-next__month">{monthShort(nextEvent.eventDate || nextEvent.date)}</span>
-                  </div>
-                  <div>
+                  <DateTile date={nextEvent.eventDate || nextEvent.date} tone="accent" size="md" />
+                  <div className="clubs-next__text">
                     <p className="clubs-next__title">{nextEvent.title}</p>
                     <p className="clubs-next__meta">
                       {timeOf(nextEvent.eventDate || nextEvent.date)}
@@ -520,116 +612,54 @@ export default function ClubDetails() {
             </section>
           )}
 
-          <section className="ui-panel">
-            <header className="ui-panel__head clubs-head">
-              <div className="ui-panel__titles">
-                <h2 className="ui-panel__title">Faculty coordinator</h2>
-              </div>
-            </header>
-            <div className="ui-panel__body ui-panel__body--tight">
-              {coordinator?.name ? (
-                <div className="clubs-card-panel">
-                  <div className="clubs-person">
-                    {coordinator.profileImage ? (
-                      <img src={coordinator.profileImage} alt="" className="ui-avatar" />
-                    ) : (
-                      <span className="ui-avatar" aria-hidden="true">{initials(coordinator.name)}</span>
-                    )}
-                    <div className="ui-grow">
-                      <div className="clubs-person__name">{coordinator.name}</div>
-                      <div className="clubs-person__sub">{coordinator.department || 'Faculty coordinator'}</div>
-                    </div>
-                  </div>
-                  {coordinator.email && (
-                    <a className="clubs-person__mail" href={`mailto:${coordinator.email}`}>
-                      <MailIcon />
-                      {coordinator.email}
-                    </a>
-                  )}
-                </div>
-              ) : (
-                <p className="clubs-admin__note">No coordinator assigned yet.</p>
-              )}
-            </div>
-          </section>
-
-          <section className="ui-panel">
-            <header className="ui-panel__head clubs-head">
-              <div className="ui-panel__titles">
-                <h2 className="ui-panel__title">Composition</h2>
-                <span className="ui-panel__meta">{members.length} members</span>
-              </div>
-            </header>
-            <div className="ui-panel__body ui-panel__body--tight clubs-card-panel">
-              <div className="clubs-composition">
-                <div className="ui-meter" aria-hidden="true">
-                  <div className="ui-meter__fill" style={{ transform: `scaleX(${coreShare})` }} />
-                </div>
-                <div className="clubs-composition__legend">
-                  <span><i className="clubs-composition__key" /><b>{coreCount}</b> core team</span>
-                  <span><i className="clubs-composition__key clubs-composition__key--rest" /><b>{regularCount}</b> {regularCount === 1 ? 'member' : 'members'}</span>
-                </div>
-              </div>
-
-              <div className="clubs-facts">
-                {joinStatus === 'member' && myMembership && (
-                  <div className="clubs-fact">
-                    <span>Your role</span>
-                    <span className="clubs-fact__value">
-                      {myMembership.membershipType === 'core_team'
-                        ? myMembership.position || 'Core team'
-                        : 'Member'}
-                    </span>
-                  </div>
-                )}
-                {joinStatus === 'member' && myMembership?.joinedAt && (
-                  <div className="clubs-fact">
-                    <span>Joined</span>
-                    <span className="clubs-fact__value">{fullDate(myMembership.joinedAt)}</span>
-                  </div>
-                )}
-                {isCoordinator && (
-                  <div className="clubs-fact">
-                    <span>Your role</span>
-                    <span className="clubs-fact__value">Faculty coordinator</span>
-                  </div>
-                )}
-                {isClubAdmin && (
-                  <div className="clubs-fact">
-                    <span>Your role</span>
-                    <span className="clubs-fact__value">Club admin</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-
-          <section className="ui-panel">
+          <section className="ui-panel clubs-rise" style={{ '--i': nextEvent ? 6 : 5 } as CSSProperties}>
             <header className="ui-panel__head clubs-head">
               <div className="ui-panel__titles">
                 <h2 className="ui-panel__title">Core team</h2>
-                <span className="ui-panel__meta">{coreTeam.length}</span>
+                <span className="ui-panel__meta">{coreCount}</span>
               </div>
             </header>
-            <div className="ui-panel__body ui-panel__body--tight">
+            <div className="ui-panel__body ui-panel__body--tight clubs-card-panel">
+              <div className="clubs-comp">
+                <Segments
+                  value={coreCount}
+                  total={members.length}
+                  segments={14}
+                  tone="ramp"
+                  ariaLabel={`${coreCount} of ${members.length} members sit on the core team`}
+                />
+                <div className="clubs-comp__legend" aria-hidden="true">
+                  <span className="clubs-comp__dot" />
+                  <span className="clubs-comp__k">core</span>
+                  <span className="clubs-comp__n">{coreCount}</span>
+                  <span className="clubs-comp__dot clubs-comp__dot--rest" />
+                  <span className="clubs-comp__k">others</span>
+                  <span className="clubs-comp__n">{regularCount}</span>
+                </div>
+              </div>
+
               {coreTeam.length ? (
                 <div className="clubs-core">
                   {coreTeam.map((m) => (
-                    <div className="clubs-core__item" key={m._id}>
-                      {m.studentId?.profileImage ? (
-                        <img src={m.studentId.profileImage} alt="" className="ui-avatar" />
-                      ) : (
-                        <span className="ui-avatar" aria-hidden="true">{initials(m.studentId?.name)}</span>
-                      )}
-                      <span className="clubs-core__text">
-                        <span className="clubs-core__name">{m.studentId?.name || 'Member'}</span>
-                        <span className="clubs-core__role">{m.position || 'Core team'}</span>
+                    <Tooltip
+                      key={m._id}
+                      label={`${m.studentId?.name || 'Member'}${m.position ? ` · ${m.position}` : ''}`}
+                    >
+                      <span className="clubs-core__av" tabIndex={0}>
+                        {m.studentId?.profileImage ? (
+                          <img src={m.studentId.profileImage} alt="" className="clubs-core__face" />
+                        ) : (
+                          <span className="clubs-core__face" aria-hidden="true">
+                            {initials(m.studentId?.name)}
+                          </span>
+                        )}
+                        {m.position ? <span className="clubs-core__seal" aria-hidden="true" /> : null}
                       </span>
-                    </div>
+                    </Tooltip>
                   ))}
                 </div>
               ) : (
-                <p className="clubs-admin__note">No core team assigned yet.</p>
+                <p className="clubs-comp__void">No core team seats yet.</p>
               )}
             </div>
           </section>
@@ -652,9 +682,6 @@ export default function ClubDetails() {
                 <h2 id="clubs-event-form-title" className="ui-panel__title">
                   {editingEvent ? 'Edit event' : 'New event'}
                 </h2>
-                <p className="ui-hint clubs-modal__sub">
-                  Events added here also appear on the department calendar.
-                </p>
               </div>
               <button
                 type="button"

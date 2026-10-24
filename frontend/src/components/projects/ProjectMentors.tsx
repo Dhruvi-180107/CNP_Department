@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { UserSelect } from '../UserSelect';
+import { Counter } from '../ui/vis';
 
 interface ProjectMentorsProps {
   projectId: string;
@@ -102,7 +103,9 @@ export function ProjectMentors({ projectId, mentors: propMentors, onMentorsChang
           <h2 className="ui-panel__title" id="prj-mentors-title">
             Mentors
           </h2>
-          <span className="ui-panel__meta">{mentors.length}</span>
+          <span className="ui-panel__meta">
+            <Counter value={mentors.length} />
+          </span>
         </div>
       </header>
 
@@ -173,9 +176,7 @@ export function ProjectMentors({ projectId, mentors: propMentors, onMentorsChang
             </span>
             <p className="ui-empty__title">No mentors assigned</p>
             <p className="ui-empty__text">
-              {isAdmin
-                ? 'Assign a faculty mentor below so the team has someone to review its updates.'
-                : 'A faculty mentor will be assigned by the project administrator.'}
+              {isAdmin ? 'Assign a faculty mentor below.' : 'A project admin assigns the mentor.'}
             </p>
           </div>
         )}

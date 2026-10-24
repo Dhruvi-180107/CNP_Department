@@ -8,6 +8,9 @@ The frame, rail, header and route-transition loader. Everything shown here comes
 | "Jump to" page search | Header, `/` shortcut | It filters the signed-in `NAVIGATION` array; there is no search endpoint and no more data than the destinations themselves. | `GET /search?q=<term>&scope=shell` returning the destinations and, later, clubs/projects/events by name. |
 | Breadcrumb parent name on detail routes | Header, e.g. `Clubs / Club details` | The route carries only an id (`/clubs/:id`); the shell does not fetch a record just to label a crumb, so it names the collection and the kind of page. | `GET /clubs/:id/summary` (or a `name` in a lightweight detail response) so the crumb can read `Clubs / Photography Club`. |
 | Relative notification time ("12m ago") | Notification popover | Derived in the browser from the real `createdAt`; no server formatting. | None needed unless timestamps must be server-relative to a fixed clock. |
+| Command-palette records search | Command palette, Records group | On first open the palette fetches the full `/clubs`, `/projects`, `/events` lists (the same payloads their pages use), caches them for the session and filters by name in the browser. There is no search endpoint to call per keystroke. | `GET /search?q=<term>&types=clubs,projects,events&limit=8`, returning `{ id, type, name, meta, href }`. |
+| Recent commands | Command palette, Recent group | The five last-opened destinations are a `localStorage` convenience (`cnp_palette_recent`); the server has no per-user recents. | Optional `GET /me/recent` if recents should follow the account across devices. |
+| Event rows in the palette | Command palette, Records group | There is no `/events/:id` route, so an event record opens the calendar rather than a detail page. | An event detail route (or `GET /events/:id` plus the page) would let the row deep-link. |
 
 Not mocked, deliberately:
 

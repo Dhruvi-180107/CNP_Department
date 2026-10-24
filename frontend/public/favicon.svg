@@ -1,5 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="7" fill="#0f1a2e"/>
-  <path d="M32 0v10L22 0H32Z" fill="#1b3fc4" opacity="0.55"/>
-  <path d="M22.9 21.4a7.9 7.9 0 0 1-5.6 2.3c-4.2 0-7.3-3.1-7.3-7.6s3.1-7.7 7.4-7.7c2.1 0 3.9.8 5.2 2.1l-2.6 2.6a4.1 4.1 0 0 0-2.7-1c-2.1 0-3.5 1.7-3.5 4s1.4 3.9 3.5 3.9c1.1 0 2-.4 2.7-1.1l2.9 2.5Z" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="CNP Department">
+  <title>CNP Department</title>
+  <!-- Cobalt tile, one cut corner, a single bold C. Drawn on a 32px grid so the
+       letterform still reads at 16px: 7.6 radius, 4.4 stroke. -->
+  <rect width="32" height="32" rx="7" fill="#1b3fc4"/>
+  <path d="M32 0H24L32 8Z" fill="#0f1a2e"/>
+  <path
+    d="M21.65 10.9A7.6 7.6 0 1 0 21.65 21.1"
+    fill="none"
+    stroke="#f8f9fc"
+    stroke-width="4.4"
+    stroke-linecap="round"
+  />
 </svg>

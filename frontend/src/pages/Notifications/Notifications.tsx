@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../../services/api';
 import { usePageLoading } from '../../context/LoadingContext';
+import { Counter, KindGlyph } from '../../components/ui/vis';
+import type { Kind } from '../../components/ui/vis';
+import { Tooltip } from '../../components/ui/Tooltip';
 import './notifications.css';
 
 interface NotificationMetadata {
@@ -42,55 +45,11 @@ interface NotificationItem {
   createdAt: string;
 }
 
-/* ── The five marks. One drawing per source family, 24px grid. ───────────── */
+/* ── Tool marks. Entity glyphs come from the shared set; these are chrome. ── */
 
-type Family = 'request' | 'club' | 'project' | 'event' | 'system';
-type MarkName = Family | 'check' | 'checkAll' | 'arrow' | 'arrowLeft' | 'filter' | 'caret';
-
-const FAMILY_ORDER: Family[] = ['request', 'club', 'project', 'event', 'system'];
-
-const FAMILY_LABEL: Record<Family, string> = {
-  request: 'Requests',
-  club: 'Clubs',
-  project: 'Projects',
-  event: 'Events',
-  system: 'System',
-};
+type MarkName = 'check' | 'checkAll' | 'arrow' | 'arrowLeft' | 'filter' | 'caret' | 'quantity' | 'attachment';
 
 const MARKS: Record<MarkName, ReactNode> = {
-  request: (
-    <>
-      <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
-      <path d="M3.5 13h4.3l1.6 2.4h5.2l1.6-2.4h4.3" />
-    </>
-  ),
-  club: (
-    <>
-      <circle cx="9.2" cy="8.2" r="3.2" />
-      <path d="M3.6 19.4a5.6 5.6 0 0 1 11.2 0" />
-      <path d="M16.4 5.5a3 3 0 0 1 0 5.7" />
-      <path d="M17.8 14.4a5.3 5.3 0 0 1 3.1 4.9" />
-    </>
-  ),
-  project: (
-    <>
-      <path d="M12 3.3 3.5 7.7 12 12l8.5-4.3L12 3.3Z" />
-      <path d="m3.5 12.3 8.5 4.3 8.5-4.3" />
-      <path d="m3.5 16.7 8.5 4.3 8.5-4.3" />
-    </>
-  ),
-  event: (
-    <>
-      <rect x="3.5" y="5.2" width="17" height="15.3" rx="2.2" />
-      <path d="M8 3.5v3.2M16 3.5v3.2M3.5 10.6h17" />
-    </>
-  ),
-  system: (
-    <>
-      <path d="M6.2 9.4a5.8 5.8 0 0 1 11.6 0c0 3.9 1.1 5.2 1.6 5.9H4.6c.5-.7 1.6-2 1.6-5.9Z" />
-      <path d="M10 18.6a2 2 0 0 0 4 0" />
-    </>
-  ),
   check: <path d="m5 12.6 4.4 4.4L19 7.2" />,
   checkAll: (
     <>
@@ -112,6 +71,10 @@ const MARKS: Record<MarkName, ReactNode> = {
   ),
   filter: <path d="M3.6 5.6h16.8l-6.6 7.5v5.3l-3.6 2v-7.3L3.6 5.6Z" />,
   caret: <path d="m8.2 10.4 3.8 3.8 3.8-3.8" />,
+  quantity: <path d="M7 7l10 10M17 7 7 17" />,
+  attachment: (
+    <path d="M18.4 10.2 11 17.6a4 4 0 0 1-5.7-5.7l8-8a2.7 2.7 0 0 1 3.8 3.8l-8 8a1.4 1.4 0 0 1-2-2l7.4-7.4" />
+  ),
 };
 
 function Mark({ name, size = 16 }: { name: MarkName; size?: number }) {
@@ -133,7 +96,28 @@ function Mark({ name, size = 16 }: { name: MarkName; size?: number }) {
   );
 }
 
-/* ── Derivation: family, label, title, body. All display only. ───────────── */
+/* ── Derivation: family, state, title. All display only. ─────────────────── */
+
+type Family = 'request' | 'club' | 'project' | 'event' | 'system';
+
+const FAMILY_ORDER: Family[] = ['request', 'club', 'project', 'event', 'system'];
+
+const FAMILY_LABEL: Record<Family, string> = {
+  request: 'Requests',
+  club: 'Clubs',
+  project: 'Projects',
+  event: 'Events',
+  system: 'System',
+};
+
+/** The glyph set reads "club" the same way here as everywhere else in the app. */
+const FAMILY_KIND: Record<Family, Kind> = {
+  request: 'request',
+  club: 'club',
+  project: 'project',
+  event: 'event',
+  system: 'system',
+};
 
 function familyOf(type: string): Family {
   // MOCK: the payload carries `type` but no taxonomy — the five marks are derived here.
@@ -212,12 +196,22 @@ function kindFor(n: NotificationItem): string {
   }
 }
 
-/* ── Time: day buckets and a quiet relative label. ───────────────────────── */
+/* ── Time: day buckets, a quiet relative label, a 14-day volume window. ───── */
 
 const DAY_MS = 86400000;
 
 function startOfDay(d: Date): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+function dayOffset(base: number, days: number): Date {
+  const d = new Date(base);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function shortDay(d: Date): string {
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 type Bucket = 'today' | 'yesterday' | 'earlier';
@@ -265,10 +259,14 @@ function sourceLabel(source: string): string {
   return source;
 }
 
+function capitalise(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 /**
  * The message and the quoted reason/feedback are the same sentence in most payloads.
- * Split them once so the reading pane shows the context as prose and the mentor's or
- * reviewer's words as the quote, never the same line twice.
+ * Split them once so the record shows the context as a note (only where it carries
+ * something the fact grid does not) and the mentor's or reviewer's words as a quote.
  */
 function paneBody(n: NotificationItem): { lead: string; quotes: Array<{ label: string; text: string; negative: boolean }> } {
   const md = n.metadata || {};
@@ -300,6 +298,97 @@ function paneBody(n: NotificationItem): { lead: string; quotes: Array<{ label: s
   return { lead, quotes };
 }
 
+/* ── Row meta: the facts as one line, never the sentence. ─────────────────── */
+
+function significantWords(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word.length > 2);
+}
+
+/** A sentence that only repeats the title's own words adds nothing to the row. */
+function repeatsTitle(n: NotificationItem, text: string): boolean {
+  const title = new Set(significantWords(titleFor(n)));
+  const words = significantWords(text);
+  if (words.length === 0) return true;
+  return words.filter((word) => title.has(word)).length >= words.length * 0.6;
+}
+
+function metaParts(n: NotificationItem): string[] {
+  // MOCK: `GET /notifications` ships one prose `message`; the scanning line is assembled
+  // from the metadata fields the payload already carries. No field is invented.
+  const md = n.metadata || {};
+  const title = titleFor(n).toLowerCase();
+  const fresh = (part: string) => part.length > 0 && !title.includes(part.toLowerCase());
+  const parts: string[] = [];
+  const quantity = typeof md.quantity === 'number' && md.quantity > 0 ? `× ${md.quantity}` : '';
+  if (md.entityName && fresh(md.entityName)) {
+    parts.push(quantity ? `${md.entityName} ${quantity}` : md.entityName);
+  }
+  const place = md.projectName || md.clubName;
+  const incoming = n.type.includes('join_request') || n.type.endsWith('_submitted') || n.type.endsWith('_created');
+  if (!md.entityName && incoming && md.actorName) parts.push(md.actorName);
+  if (place) parts.push(place);
+  if (!md.entityName && !incoming && md.actorName) parts.push(md.actorName);
+  if (parts.length === 0) {
+    const message = bodyFor(n);
+    if (message && !repeatsTitle(n, message)) parts.push(message);
+  }
+  return parts.slice(0, 2);
+}
+
+
+/* ── Record facts: glyph + label + value. ─────────────────────────────────── */
+
+type FactIcon = Kind | 'quantity' | 'attachment';
+
+interface Fact {
+  label: string;
+  value: string;
+  icon?: FactIcon;
+}
+
+function FactMark({ icon }: { icon?: FactIcon }) {
+  if (!icon) return <span className="ntf-fact__dot" aria-hidden="true" />;
+  if (icon === 'quantity' || icon === 'attachment') {
+    return <Mark name={icon} size={15} />;
+  }
+  return <KindGlyph kind={icon} size={15} />;
+}
+
+function factsFor(n: NotificationItem): Fact[] {
+  const md = n.metadata || {};
+  const facts: Fact[] = [];
+  const isMaterial = n.type.startsWith('material_') || n.type.includes('material_added');
+  if (md.projectName) facts.push({ label: 'Project', value: md.projectName, icon: 'project' });
+  if (md.clubName) facts.push({ label: 'Club', value: md.clubName, icon: 'club' });
+  if (md.entityName) {
+    facts.push(
+      isMaterial
+        ? { label: 'Item', value: md.entityName, icon: 'inventory' }
+        : { label: 'Update', value: md.entityName, icon: 'update' },
+    );
+  }
+  if (md.quantity) facts.push({ label: 'Quantity', value: `× ${md.quantity}`, icon: 'quantity' });
+  if (md.actorName) facts.push({ label: 'From', value: md.actorName, icon: 'member' });
+  if (md.status) facts.push({ label: 'Status', value: capitalise(md.status), icon: 'system' });
+  if (md.requestDate) facts.push({ label: 'Requested', value: exactTime(md.requestDate), icon: 'event' });
+  if (md.submissionTime) facts.push({ label: 'Submitted', value: exactTime(md.submissionTime), icon: 'event' });
+  if (md.creationTime) facts.push({ label: 'Added', value: exactTime(md.creationTime), icon: 'event' });
+  if (md.source) facts.push({ label: 'Source', value: sourceLabel(md.source), icon: 'inventory' });
+  if (md.hasAttachments) {
+    facts.push({ label: 'Attachments', value: String(md.attachmentCount || 1), icon: 'attachment' });
+  }
+  if (md.department) facts.push({ label: 'Department', value: md.department });
+  if (md.semester) facts.push({ label: 'Semester', value: String(md.semester) });
+  if (md.actorEmail) facts.push({ label: 'Email', value: md.actorEmail });
+  return facts;
+}
+
+/* ── The page ────────────────────────────────────────────────────────────── */
+
 export default function Notifications() {
   const navigate = useNavigate();
   const { setPageLoading } = usePageLoading();
@@ -314,6 +403,7 @@ export default function Notifications() {
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
   const filterBtnRef = useRef<HTMLButtonElement>(null);
+  const selectedRowRef = useRef<HTMLButtonElement | null>(null);
 
   const fetchNotifications = async () => {
     try {
@@ -340,7 +430,8 @@ export default function Notifications() {
   }, [notifications]);
 
   const filteredNotifications = useMemo(() => {
-    // MOCK: type and read-state filtering happen here — the endpoint takes no filter params.
+    // Filtering stays here by choice: `GET /notifications` accepts `type=` and
+    // `status=`, but the page already holds the list, so filtering costs no round trip.
     const byRead = filter === 'unread' ? notifications.filter((n) => !n.isRead) : notifications;
     if (family === 'all') return byRead;
     return byRead.filter((n) => familyOf(n.type) === family);
@@ -363,6 +454,28 @@ export default function Notifications() {
       .map((key) => ({ key, label: BUCKET_LABEL[key], items: buckets[key] }))
       .filter((g) => g.items.length > 0);
   }, [filteredNotifications]);
+
+  /* Arrival rhythm: the real daily counts of the page, zero-filled. */
+  const volume = useMemo(() => {
+    // MOCK: `/notifications` returns no time series — the 14-day window is grouped here
+    // from `createdAt`, with an explicit zero for every day nothing arrived.
+    const days = 14;
+    const today = startOfDay(new Date());
+    const counts = Array.from({ length: days }, () => 0);
+    for (const n of notifications) {
+      const at = startOfDay(new Date(n.createdAt));
+      const index = days - 1 - Math.round((today - at) / DAY_MS);
+      if (index >= 0 && index < days) counts[index] += 1;
+    }
+    const labels = counts.map((count, i) => `${shortDay(dayOffset(today, i - (days - 1)))} · ${count}`);
+    return {
+      counts,
+      labels,
+      today: counts[days - 1],
+      peak: counts.reduce((a, b) => Math.max(a, b), 0),
+      window: counts.reduce((a, b) => a + b, 0),
+    };
+  }, [notifications]);
 
   const selected = useMemo(() => {
     return (
@@ -391,15 +504,32 @@ export default function Notifications() {
     };
   }, [typeMenuOpen]);
 
-  const markRead = async (id: string, e?: React.MouseEvent) => {
+  /* Escape leaves the narrow reading pane and puts focus back on its row. */
+  useEffect(() => {
+    if (!readingOnNarrow || typeMenuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setReadingOnNarrow(false);
+      window.requestAnimationFrame(() => selectedRowRef.current?.focus());
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [readingOnNarrow, typeMenuOpen]);
+
+  /* Read state is two-way: an inbox you can only empty is not a filing system.
+     Both verbs return the stored record, so the row shows what was saved. */
+  const setReadState = async (id: string, isRead: boolean, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     try {
-      await api('PATCH', `/notifications/${id}/read`);
-      setNotifications((prev) => prev.map((n) => (n._id === id ? { ...n, isRead: true } : n)));
+      await api('PATCH', `/notifications/${id}/${isRead ? 'read' : 'unread'}`);
+      setNotifications((prev) => prev.map((n) => (n._id === id ? { ...n, isRead } : n)));
     } catch (err) {
-      console.error('Failed to mark notification as read:', err);
+      console.error(`Failed to mark notification as ${isRead ? 'read' : 'unread'}:`, err);
     }
   };
+
+  const markRead = (id: string, e?: React.MouseEvent) => setReadState(id, true, e);
+  const markUnread = (id: string, e?: React.MouseEvent) => setReadState(id, false, e);
 
   const markAllAsRead = async () => {
     if (unreadCount === 0 || markingAll) return;
@@ -440,52 +570,38 @@ export default function Notifications() {
 
   const total = notifications.length;
   const filtersActive = filter !== 'all' || family !== 'all';
-  const bodyClass = !loading && selected ? (readingOnNarrow ? ' is-reading' : '') : ' is-solo';
+  const isReading = Boolean(selected) && !loading && readingOnNarrow;
+  const isEmpty = !loading && filteredNotifications.length === 0;
+  const bodyClass = `${!loading && selected ? (isReading ? ' is-reading' : '') : ' is-solo'}${
+    isEmpty ? ' is-empty' : ''
+  }`;
 
-  const factsFor = (n: NotificationItem): Array<[string, string]> => {
-    const md = n.metadata || {};
-    const facts: Array<[string, string]> = [];
-    const materialType = n.type.startsWith('material_') || n.type.includes('material_added');
-    if (md.projectName) facts.push(['Project', md.projectName]);
-    if (md.clubName) facts.push(['Club', md.clubName]);
-    if (md.entityName) facts.push([materialType ? 'Item' : 'Update', md.entityName]);
-    if (md.quantity) facts.push(['Quantity', String(md.quantity)]);
-    if (md.actorName) facts.push(['From', md.actorName]);
-    if (md.actorEmail) facts.push(['Email', md.actorEmail]);
-    if (md.department) facts.push(['Department', md.department]);
-    if (md.semester) facts.push(['Semester', String(md.semester)]);
-    if (md.status) facts.push(['Status', md.status.charAt(0).toUpperCase() + md.status.slice(1)]);
-    if (md.source) facts.push(['Source', sourceLabel(md.source)]);
-    if (md.hasAttachments) facts.push(['Attachments', String(md.attachmentCount || 1)]);
-    if (md.requestDate) facts.push(['Requested', exactTime(md.requestDate)]);
-    if (md.submissionTime) facts.push(['Submitted', exactTime(md.submissionTime)]);
-    if (md.creationTime) facts.push(['Added', exactTime(md.creationTime)]);
-    return facts;
-  };
-
-  const pane = selected ? paneBody(selected) : { lead: '', quotes: [] };
+  const record = selected ? paneBody(selected) : null;
   const facts = selected ? factsFor(selected) : [];
+  /* The prose only survives where the grid cannot carry it: a record with two or more
+     facts, or a quote, is already complete. Otherwise the sentence is the record. */
+  const showNote = Boolean(record?.lead) && facts.length < 2 && (record?.quotes.length ?? 0) === 0;
+
+  const volumeAria =
+    volume.window === 0
+      ? 'No notifications in the last 14 days'
+      : `${volume.window} ${volume.window === 1 ? 'notification' : 'notifications'} in the last 14 days, ${volume.today} today`;
 
   return (
     <div className="ntf">
-      <header className="ui-page-head">
+      <header className="ui-page-head ntf-pagehead">
         <div className="ui-page-head__text">
           <div className="ntf-headline">
             <h1 className="ui-title">Notifications</h1>
             {unreadCount > 0 && (
-              <span className="ui-count ui-count--accent">
-                {unreadCount}
-                <span className="ui-visually-hidden"> unread</span>
-              </span>
+              <Tooltip label={`${unreadCount} unread of ${total}`}>
+                <span className="ui-count ui-count--accent">
+                  <Counter value={unreadCount} />
+                  <span className="ui-visually-hidden"> unread</span>
+                </span>
+              </Tooltip>
             )}
           </div>
-          <p className="ui-sub">
-            {total === 0
-              ? 'Updates about your clubs, projects, events and material requests arrive here.'
-              : unreadCount > 0
-                ? `${total} in your inbox · ${unreadCount} unread`
-                : `${total} in your inbox · all read`}
-          </p>
         </div>
         <div className="ui-page-actions">
           <button
@@ -512,72 +628,109 @@ export default function Notifications() {
           </div>
         </div>
       ) : (
-        <section className="ui-panel ntf-inbox" aria-label="Notification inbox">
-          <div className="ntf-tools">
-            <div className="ui-seg" role="group" aria-label="Filter by read state">
-              <button type="button" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>
-                All
-                <span className="ntf-seg-count">{total}</span>
-              </button>
-              <button type="button" aria-pressed={filter === 'unread'} onClick={() => setFilter('unread')}>
-                Unread
-                <span className="ntf-seg-count">{unreadCount}</span>
-              </button>
-            </div>
+        <section className={`ui-panel ntf-inbox${isReading ? ' is-reading' : ''}`} aria-label="Notification inbox">
+          <div className="ntf-bar">
+            <div className="ntf-filters">
+              <div className="ui-seg ntf-seg" role="group" aria-label="Filter by read state">
+                <button type="button" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>
+                  <span>All</span>
+                  <span className="ntf-seg__count">{total}</span>
+                </button>
+                <button type="button" aria-pressed={filter === 'unread'} onClick={() => setFilter('unread')}>
+                  <span>Unread</span>
+                  <span className="ntf-seg__count">{unreadCount}</span>
+                </button>
+              </div>
 
-            <div className="ntf-filter" ref={filterRef}>
-              <button
-                type="button"
-                ref={filterBtnRef}
-                className="ui-btn ui-btn--quiet ui-btn--sm"
-                aria-haspopup="menu"
-                aria-expanded={typeMenuOpen}
-                onClick={() => setTypeMenuOpen((open) => !open)}
-              >
-                <Mark name="filter" size={13} />
-                {family === 'all' ? 'All types' : FAMILY_LABEL[family]}
-                <Mark name="caret" size={13} />
-              </button>
-              {typeMenuOpen && (
-                <div className="ui-menu ntf-menu" role="menu" aria-label="Filter by type">
-                  <button
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={family === 'all'}
-                    className="ui-menu__item"
-                    onClick={() => {
-                      setFamily('all');
-                      setTypeMenuOpen(false);
-                    }}
-                  >
-                    <span className="ntf-menu__tick" aria-hidden="true">
-                      <Mark name="check" size={13} />
-                    </span>
-                    All types
-                    <span className="ntf-menu__count">{total}</span>
-                  </button>
-                  {familiesPresent.map(({ family: f, count }) => (
+              <div className="ntf-filter" ref={filterRef}>
+                <button
+                  type="button"
+                  ref={filterBtnRef}
+                  className="ui-btn ui-btn--quiet ui-btn--sm"
+                  aria-haspopup="menu"
+                  aria-expanded={typeMenuOpen}
+                  onClick={() => setTypeMenuOpen((open) => !open)}
+                >
+                  <Mark name="filter" size={13} />
+                  {family === 'all' ? 'All types' : FAMILY_LABEL[family]}
+                  <Mark name="caret" size={13} />
+                </button>
+                {typeMenuOpen && (
+                  <div className="ui-menu ntf-menu" role="menu" aria-label="Filter by type">
                     <button
-                      key={f}
                       type="button"
                       role="menuitemradio"
-                      aria-checked={family === f}
+                      aria-checked={family === 'all'}
                       className="ui-menu__item"
                       onClick={() => {
-                        setFamily(f);
+                        setFamily('all');
                         setTypeMenuOpen(false);
                       }}
                     >
                       <span className="ntf-menu__tick" aria-hidden="true">
                         <Mark name="check" size={13} />
                       </span>
-                      {FAMILY_LABEL[f]}
-                      <span className="ntf-menu__count">{count}</span>
+                      <span className="ntf-menu__label">All types</span>
+                      <span className="ntf-menu__bar" aria-hidden="true">
+                        <span style={{ '--ntf-f': 1 } as CSSProperties} />
+                      </span>
+                      <span className="ntf-menu__count">{total}</span>
                     </button>
-                  ))}
-                </div>
-              )}
+                    {familiesPresent.map(({ family: f, count }) => (
+                      <button
+                        key={f}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={family === f}
+                        className="ui-menu__item"
+                        title={`${FAMILY_LABEL[f]} · ${count} of ${total}`}
+                        onClick={() => {
+                          setFamily(f);
+                          setTypeMenuOpen(false);
+                        }}
+                      >
+                        <span className="ntf-menu__tick" aria-hidden="true">
+                          <Mark name="check" size={13} />
+                        </span>
+                        <span className="ntf-menu__label">{FAMILY_LABEL[f]}</span>
+                        <span className="ntf-menu__bar" aria-hidden="true">
+                          <span style={{ '--ntf-f': total > 0 ? count / total : 0 } as CSSProperties} />
+                        </span>
+                        <span className="ntf-menu__count">{count}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
+
+            {total > 0 && (
+              <Tooltip
+                label={`${volumeAria} · busiest day ${volume.peak}`}
+                side="bottom"
+              >
+                <div className="ntf-vol" role="img" aria-label={volumeAria}>
+                  <span className="ntf-vol__days" aria-hidden="true">
+                    {volume.counts.map((count, i) => (
+                      <span
+                        key={i}
+                        className="ntf-vol__day"
+                        data-today={i === volume.counts.length - 1 || undefined}
+                        data-empty={count === 0 || undefined}
+                        title={volume.labels[i]}
+                        style={
+                          { '--ntf-f': volume.peak > 0 ? count / volume.peak : 0 } as CSSProperties
+                        }
+                      />
+                    ))}
+                  </span>
+                  <span className="ntf-vol__total">
+                    <Counter value={volume.today} />
+                    <span className="ntf-vol__cap">today</span>
+                  </span>
+                </div>
+              </Tooltip>
+            )}
           </div>
 
           <div className={`ntf-body${bodyClass}`}>
@@ -602,186 +755,211 @@ export default function Notifications() {
                   <span className="ui-empty__mark">
                     <Mark name="check" size={15} />
                   </span>
-                  <p className="ui-empty__title">You&rsquo;re all caught up</p>
-                  <p className="ui-empty__text">
-                    {total === 0
-                      ? 'Nothing has arrived yet. Updates about your clubs, projects, events and material requests will appear here.'
-                      : filter === 'unread'
-                        ? total === 1
-                          ? 'Your only notification is read.'
-                          : `All ${total} notifications are read.`
-                        : `${total} notifications are in the inbox, none filed under ${
-                            family === 'all' ? 'this type' : FAMILY_LABEL[family].toLowerCase()
-                          }.`}
-                  </p>
-                  <div className="ntf-empty__actions">
-                    {total > 0 && filtersActive && (
-                      <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={resetFilters}>
-                        Show all notifications
-                      </button>
-                    )}
-                    <Link className="ui-btn ui-btn--sm" to="/dashboard">
-                      Back to dashboard
-                    </Link>
-                  </div>
+                  {total === 0 ? (
+                    <>
+                      <p className="ui-empty__title">Inbox empty</p>
+                      <p className="ui-empty__text">Nothing has arrived yet.</p>
+                      <div className="ntf-empty__actions">
+                        <Link className="ui-btn ui-btn--sm" to="/dashboard">
+                          Back to dashboard
+                        </Link>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="ui-empty__title">
+                        {filter === 'unread' ? 'All caught up' : 'Nothing of this type'}
+                      </p>
+                      <p className="ui-empty__text">
+                        {filter === 'unread' ? 'Every notification is read.' : 'No notifications of this type.'}
+                      </p>
+                      <div className="ntf-empty__actions">
+                        {filtersActive ? (
+                          <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={resetFilters}>
+                            Show all notifications
+                          </button>
+                        ) : (
+                          <Link className="ui-btn ui-btn--sm" to="/dashboard">
+                            Back to dashboard
+                          </Link>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : (
                 <ul className="ntf-list">
-                  {groups.map((group) => (
-                    <li key={group.key} className="ntf-group">
-                      <h2 className="ntf-day">
-                        <span>{group.label}</span>
-                        <span className="ntf-day__count">{group.items.length}</span>
-                      </h2>
-                      <ul>
-                        {group.items.map((n) => {
-                          const fam = familyOf(n.type);
-                          const state = stateOf(n.type);
-                          const isSelected = selected?._id === n._id;
-                          return (
-                            <li
-                              key={n._id}
-                              className={`ntf-row${n.isRead ? '' : ' is-unread'}${
-                                isSelected ? ' is-selected' : ''
-                              }`}
-                            >
-                              <button
-                                type="button"
-                                className="ntf-row__hit"
-                                aria-current={isSelected ? 'true' : undefined}
-                                onClick={() => selectRow(n)}
+                  {groups.map((group) => {
+                    const groupUnread = group.items.filter((n) => !n.isRead).length;
+                    return (
+                      <li key={group.key} className="ntf-group">
+                        <h2 className="ntf-day">
+                          <span className="ntf-day__label">{group.label}</span>
+                          <span className="ntf-day__count">{group.items.length}</span>
+                          <span className="ui-visually-hidden">
+                            {groupUnread > 0
+                              ? `, ${groupUnread} unread`
+                              : ', all read'}
+                          </span>
+                        </h2>
+                        <ul>
+                          {group.items.map((n, index) => {
+                            const fam = familyOf(n.type);
+                            const state = stateOf(n.type);
+                            const isSelected = selected?._id === n._id;
+                            const parts = metaParts(n);
+                            return (
+                              <li
+                                key={n._id}
+                                className={`ntf-row${n.isRead ? '' : ' is-unread'}${
+                                  isSelected ? ' is-selected' : ''
+                                }`}
+                                style={{ '--ntf-i': Math.min(index, 7) } as CSSProperties}
                               >
-                                <span className="ntf-row__flag" aria-hidden="true" />
-                                <span className={`ntf-mark${state ? ` ${state}` : ''}`} aria-hidden="true">
-                                  <Mark name={fam} />
-                                </span>
-                                <span className="ntf-row__text">
-                                  <span className="ntf-row__title">
-                                    <span className="ui-visually-hidden">
-                                      {n.isRead ? 'Read: ' : 'Unread: '}
-                                    </span>
-                                    {titleFor(n)}
+                                <button
+                                  type="button"
+                                  className="ntf-row__hit"
+                                  aria-current={isSelected ? 'true' : undefined}
+                                  onClick={() => selectRow(n)}
+                                  ref={isSelected ? selectedRowRef : undefined}
+                                >
+                                  <span className="ntf-row__flag" aria-hidden="true" />
+                                  <span className={`ntf-mark${state ? ` ${state}` : ''}`} aria-hidden="true">
+                                    <KindGlyph kind={FAMILY_KIND[fam]} size={20} />
                                   </span>
-                                  <span className="ntf-row__body">{paneBody(n).lead}</span>
-                                </span>
-                              </button>
-                              <span className="ntf-row__aside">
-                                <span className="ntf-row__time" title={exactTime(n.createdAt)}>
-                                  {relativeLabel(n.createdAt)}
-                                </span>
-                                <span className="ntf-row__tools">
-                                  {!n.isRead && (
+                                  <span className="ntf-row__text">
+                                    <span className="ntf-row__title">
+                                      <span className="ui-visually-hidden">
+                                        {n.isRead ? 'Read: ' : 'Unread: '}
+                                      </span>
+                                      {titleFor(n)}
+                                    </span>
+                                    <span className="ntf-row__meta">
+                                      {parts.map((part, i) => (
+                                        <span key={`${part}-${i}`} className="ntf-row__part">
+                                          {i > 0 && <span className="ntf-row__dot" aria-hidden="true" />}
+                                          {part}
+                                        </span>
+                                      ))}
+                                    </span>
+                                  </span>
+                                </button>
+                                <span className="ntf-row__aside">
+                                  <span className="ntf-row__time" title={exactTime(n.createdAt)}>
+                                    {relativeLabel(n.createdAt)}
+                                  </span>
+                                  <span className="ntf-row__tools">
                                     <button
                                       type="button"
                                       className="ntf-tool"
-                                      aria-label={`Mark "${titleFor(n)}" as read`}
-                                      title="Mark as read"
-                                      onClick={(e) => markRead(n._id, e)}
+                                      aria-label={`Mark "${titleFor(n)}" as ${n.isRead ? 'unread' : 'read'}`}
+                                      title={n.isRead ? 'Mark as unread' : 'Mark as read'}
+                                      onClick={(e) =>
+                                        n.isRead ? markUnread(n._id, e) : markRead(n._id, e)
+                                      }
                                     >
-                                      <Mark name="check" size={14} />
+                                      <Mark name={n.isRead ? 'arrowLeft' : 'check'} size={14} />
                                     </button>
-                                  )}
-                                  {n.link && (
-                                    <button
-                                      type="button"
-                                      className="ntf-tool"
-                                      aria-label={`Open "${titleFor(n)}"`}
-                                      title={n.actionText || 'Open'}
-                                      onClick={() => handleAction(n)}
-                                    >
-                                      <Mark name="arrow" size={14} />
-                                    </button>
-                                  )}
+                                    {n.link && (
+                                      <button
+                                        type="button"
+                                        className="ntf-tool"
+                                        aria-label={`Open "${titleFor(n)}"`}
+                                        title={n.actionText || 'Open'}
+                                        onClick={() => handleAction(n)}
+                                      >
+                                        <Mark name="arrow" size={14} />
+                                      </button>
+                                    )}
+                                  </span>
                                 </span>
-                              </span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </li>
-                  ))}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
 
             {selected && !loading && (
               <aside className="ntf-pane" aria-label="Selected notification">
-                <article className="ntf-pane__inner">
-                  <button
-                    type="button"
-                    className="ntf-back"
-                    onClick={() => setReadingOnNarrow(false)}
-                  >
+                <article className="ntf-record" key={selected._id}>
+                  <button type="button" className="ntf-back" onClick={() => setReadingOnNarrow(false)}>
                     <Mark name="arrowLeft" size={14} />
                     Inbox
                   </button>
 
-                  <header className="ntf-pane__head">
+                  <header className="ntf-record__head">
                     <span
-                      className={`ntf-mark ntf-mark--lg${
-                        stateOf(selected.type) ? ` ${stateOf(selected.type)}` : ''
-                      }`}
+                      className={`ntf-plate${stateOf(selected.type) ? ` ${stateOf(selected.type)}` : ''}`}
                       aria-hidden="true"
                     >
-                      <Mark name={familyOf(selected.type)} size={19} />
+                      <KindGlyph kind={FAMILY_KIND[familyOf(selected.type)]} size={24} />
                     </span>
-                    <div className="ntf-pane__ident">
-                      <p className="ntf-pane__kind">
+                    <div className="ntf-record__ident">
+                      <p className="ntf-record__kind">
                         <span>{kindFor(selected)}</span>
                         <span className="ntf-sep" aria-hidden="true" />
-                        <span>{exactTime(selected.createdAt)}</span>
+                        <time dateTime={selected.createdAt}>{exactTime(selected.createdAt)}</time>
                       </p>
-                      <h2 className="ntf-pane__title">{titleFor(selected)}</h2>
+                      <h2 className="ntf-record__title">{titleFor(selected)}</h2>
                     </div>
-                    <span className={`ui-tag${selected.isRead ? ' ui-tag--plain' : ' is-accent'}`}>
+                    <span className={`ntf-state${selected.isRead ? '' : ' is-unread'}`}>
+                      <span className="ntf-state__tick" aria-hidden="true" />
                       {selected.isRead ? 'Read' : 'Unread'}
                     </span>
                   </header>
 
-                  {pane.lead && <p className="ntf-pane__message">{pane.lead}</p>}
+                  {showNote && record?.lead && <p className="ntf-record__note">{record.lead}</p>}
 
-                  {pane.quotes.map((quote) => (
+                  {facts.length > 0 && (
+                    <dl className="ntf-grid">
+                      {facts.map((fact) => (
+                        <div className="ntf-fact" key={`${fact.label}-${fact.value}`}>
+                          <dt className="ntf-fact__label">
+                            <span className="ntf-fact__mark" aria-hidden="true">
+                              <FactMark icon={fact.icon} />
+                            </span>
+                            {fact.label}
+                          </dt>
+                          <dd className="ntf-fact__value">{fact.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+
+                  {record?.quotes.map((quote) => (
                     <blockquote key={quote.label} className={`ntf-quote${quote.negative ? ' is-negative' : ''}`}>
                       <p className="ntf-quote__label">{quote.label}</p>
                       <p className="ntf-quote__text">&ldquo;{quote.text}&rdquo;</p>
                     </blockquote>
                   ))}
 
-                  {facts.length > 0 && (
-                    <dl className="ntf-facts">
-                      {facts.map(([label, value]) => (
-                        <div key={label} className="ntf-facts__pair">
-                          <dt>{label}</dt>
-                          <dd>{value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  )}
-
-                  {(selected.link || !selected.isRead) && (
-                    <footer className="ntf-pane__foot">
-                      {selected.link ? (
-                        <button
-                          type="button"
-                          className="ui-btn ui-btn--primary ui-btn--sm"
-                          onClick={() => handleAction(selected)}
-                        >
-                          {selected.actionText || 'Open'}
-                          <Mark name="arrow" size={14} />
-                        </button>
-                      ) : null}
-                      {!selected.isRead && (
-                        <button
-                          type="button"
-                          className="ui-btn ui-btn--quiet ui-btn--sm"
-                          onClick={() => markRead(selected._id)}
-                        >
-                          <Mark name="check" size={14} />
-                          Mark as read
-                        </button>
-                      )}
-                    </footer>
-                  )}
+                  <footer className="ntf-record__foot">
+                    {selected.link ? (
+                      <button
+                        type="button"
+                        className="ui-btn ui-btn--primary ui-btn--sm"
+                        onClick={() => handleAction(selected)}
+                      >
+                        {selected.actionText || 'Open'}
+                        <Mark name="arrow" size={14} />
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn--quiet ui-btn--sm"
+                      onClick={() =>
+                        selected.isRead ? markUnread(selected._id) : markRead(selected._id)
+                      }
+                    >
+                      <Mark name={selected.isRead ? 'arrowLeft' : 'check'} size={14} />
+                      {selected.isRead ? 'Mark as unread' : 'Mark as read'}
+                    </button>
+                  </footer>
                 </article>
               </aside>
             )}

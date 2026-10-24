@@ -40,7 +40,17 @@ const HELP_ITEMS = [
   },
 ];
 
-const ROLES = ['Students', 'Faculty coordinators', 'Faculty mentors', 'Club admins', 'Project admins'];
+/**
+ * Who signs in. A glyph and a word each; the duty lives in the accessible name and
+ * the hover title, because five sentences in a row is a paragraph, not a signpost.
+ */
+const ROLES = [
+  { label: 'Students', duty: 'Their clubs, projects, events and inbox.', path: 'M12 3 3 7l9 4 9-4-9-4Zm-9 8v4l9 4 9-4v-4' },
+  { label: 'Coordinators', duty: 'The clubs they guide and the requests waiting.', path: 'M12 21s7-5.2 7-11a7 7 0 1 0-14 0c0 5.8 7 11 7 11Zm0-8.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z' },
+  { label: 'Mentors', duty: 'The projects they mentor and the feedback they leave.', path: 'M9 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm12 10a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM8.6 8.6l6.8 6.8M6 14v1a4 4 0 0 0 4 4h1' },
+  { label: 'Club admins', duty: 'Coverage across the club programme.', path: 'm12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5' },
+  { label: 'Project admins', duty: 'The portfolio, materials and inventory.', path: 'M4 4h7v7H4V4Zm9 0h7v4h-7V4ZM4 13h7v7H4v-7Zm9-3h7v10h-7V10Z' },
+];
 
 export function LandingSections() {
   return (
@@ -55,12 +65,17 @@ export function LandingSections() {
 
           <div className="landing-about-foot">
             <p className="landing-about-line">
-              Students, faculty coordinators and project teams sign in to manage clubs, projects, events,
-              notifications and material requests in one place.
+              One platform for the people who run the clubs and the projects.
             </p>
             <ul className="landing-roles" aria-label="Who signs in">
               {ROLES.map((role) => (
-                <li key={role}>{role}</li>
+                <li key={role.label} title={role.duty}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                    <path d={role.path} />
+                  </svg>
+                  <span className="landing-roles__label">{role.label}</span>
+                  <span className="ui-visually-hidden">{role.duty}</span>
+                </li>
               ))}
             </ul>
           </div>

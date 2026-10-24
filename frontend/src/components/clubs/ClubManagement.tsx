@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { UserSelect } from '../UserSelect';
 import '../../pages/Clubs/clubs.css';
 
-type Modal = null | 'edit' | 'member' | 'coordinator' | 'images';
+type Modal = null | 'requests' | 'edit' | 'member' | 'coordinator' | 'images';
 
 const CloseIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -41,6 +41,13 @@ const BadgeIcon = () => (
   </svg>
 );
 
+const InboxIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M3.4 12.6h4.3l1.6 2.8h5.4l1.6-2.8h4.3V20H3.4Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+    <path d="M6.4 12.6V4.4h11.2v8.2" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+  </svg>
+);
+
 const CheckIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="m5 12.5 4.5 4.5L19 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -52,6 +59,10 @@ function initials(name?: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase();
 }
 
+/**
+ * The club's whole administration, as one toolbar. Every capability lives behind
+ * a key that opens a modal — no panels around the instrument.
+ */
 export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => void }) {
   const clubId = club._id;
   const { user } = useAuth();
@@ -259,105 +270,114 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
   ).filter(Boolean);
 
   return (
-    <div className="clubs-admin">
-      <section className="ui-panel" id="join-requests" aria-labelledby="clubs-requests-title">
-        <header className="ui-panel__head clubs-head">
-          <div className="ui-panel__titles">
-            <h2 id="clubs-requests-title" className="ui-panel__title">Join requests</h2>
-            <span className="ui-panel__meta">
-              {loading ? 'Loading' : `${requests.length} waiting`}
-            </span>
-          </div>
-          {requests.length > 0 && <span className="ui-tag is-warning">Needs review</span>}
-        </header>
+    <>
+      <div className="clubs-toolbar" role="toolbar" aria-label="Manage this club">
+        <button
+          type="button"
+          className={`ui-btn ui-btn--quiet ui-btn--sm clubs-toolbar__requests${requests.length ? ' is-waiting' : ''}`}
+          onClick={() => setModal('requests')}
+        >
+          <InboxIcon />
+          Requests
+          <span className={`ui-count${requests.length ? ' ui-count--accent' : ''}`}>
+            {loading ? '·' : requests.length}
+          </span>
+        </button>
 
-        <div className="ui-panel__body ui-panel__body--flush">
-          {loading ? (
-            <div className="clubs-skel clubs-skel--row">
-              <div className="ui-skel clubs-skel__plate clubs-skel__plate--sm" />
-              <div className="clubs-skel__body">
-                <div className="ui-skel clubs-skel__line clubs-skel__line--title" />
-                <div className="ui-skel clubs-skel__line clubs-skel__line--short" />
+        <span className="clubs-toolbar__sep" aria-hidden="true" />
+
+        {user?.role === 'club_admin' && (
+          <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={() => setModal('edit')}>
+            <EditIcon />
+            Edit
+          </button>
+        )}
+        <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={() => setModal('member')}>
+          <UserPlusIcon />
+          Add member
+        </button>
+        {user?.role === 'club_admin' && (
+          <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={() => setModal('coordinator')}>
+            <BadgeIcon />
+            Coordinator
+          </button>
+        )}
+        <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={() => setModal('images')}>
+          <ImageIcon />
+          Images
+        </button>
+      </div>
+
+      {modal === 'requests' && (
+        <div className="ui-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setModal(null); }}>
+          <div className="ui-modal" role="dialog" aria-modal="true" aria-labelledby="clubs-requests-title">
+            <div className="ui-modal__head">
+              <div className="ui-panel__titles">
+                <h2 id="clubs-requests-title" className="ui-panel__title">Join requests</h2>
+                <span className="ui-panel__meta">{requests.length}</span>
               </div>
+              <button type="button" className="ui-icon-btn" onClick={() => setModal(null)} aria-label="Close">
+                <CloseIcon />
+              </button>
             </div>
-          ) : requests.length ? (
-            <div>
-              {requests.map(r => (
-                <div key={r._id} className="clubs-requests__row">
-                  {r.studentId?.profileImage ? (
-                    <img src={r.studentId.profileImage} alt="" className="ui-avatar" />
-                  ) : (
-                    <span className="ui-avatar" aria-hidden="true">{initials(r.studentId?.name)}</span>
-                  )}
 
-                  <div className="ui-grow">
-                    <div className="clubs-member__name">{r.studentId?.name || 'Unknown student'}</div>
-                    <div className="clubs-requests__meta">
-                      <a href={`mailto:${r.studentId?.email}`}>{r.studentId?.email}</a>
-                      {r.studentId?.department ? ` · ${r.studentId.department}` : ''}
-                      {r.studentId?.semester ? ` · Semester ${r.studentId.semester}` : ''}
-                      {r.studentId?.enrollmentNumber ? ` · ${r.studentId.enrollmentNumber}` : ''}
-                      {r.createdAt ? ` · requested ${new Date(r.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}` : ''}
-                    </div>
-                  </div>
-
-                  <div className="clubs-requests__actions">
-                    <button type="button" className="ui-btn ui-btn--sm" onClick={() => handleApprove(r._id)}>
-                      <CheckIcon />
-                      Approve
-                    </button>
-                    <button type="button" className="ui-btn ui-btn--ghost ui-btn--sm clubs-requests__reject" onClick={() => handleReject(r._id)}>
-                      Reject
-                    </button>
+            <div className="ui-panel__body ui-panel__body--flush">
+              {loading ? (
+                <div className="clubs-skel clubs-skel--row">
+                  <div className="ui-skel clubs-skel__plate clubs-skel__plate--sm" />
+                  <div className="clubs-skel__body">
+                    <div className="ui-skel clubs-skel__line clubs-skel__line--title" />
+                    <div className="ui-skel clubs-skel__line clubs-skel__line--short" />
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="clubs-admin__empty">
-              <CheckIcon />
-              <span>No requests waiting.</span>
-              <span className="clubs-admin__note">Students who ask to join appear here for approval.</span>
-            </div>
-          )}
-        </div>
-      </section>
+              ) : requests.length ? (
+                <div>
+                  {requests.map(r => (
+                    <div key={r._id} className="clubs-requests__row">
+                      {r.studentId?.profileImage ? (
+                        <img src={r.studentId.profileImage} alt="" className="ui-avatar" />
+                      ) : (
+                        <span className="ui-avatar" aria-hidden="true">{initials(r.studentId?.name)}</span>
+                      )}
 
-      <section className="ui-panel" aria-labelledby="clubs-admin-title">
-        <header className="ui-panel__head clubs-head">
-          <div className="ui-panel__titles">
-            <h2 id="clubs-admin-title" className="ui-panel__title">Administration</h2>
-            <span className="ui-panel__meta">{user?.role === 'club_admin' ? 'Club admin' : 'Faculty coordinator'}</span>
-          </div>
-        </header>
-        <div className="ui-panel__body">
-          <div className="clubs-admin__actions">
-            {user?.role === 'club_admin' && (
-              <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={() => setModal('edit')}>
-                <EditIcon />
-                Edit details
+                      <div className="ui-grow">
+                        <div className="clubs-member__name">{r.studentId?.name || 'Unknown student'}</div>
+                        <div className="clubs-requests__meta">
+                          <a href={`mailto:${r.studentId?.email}`}>{r.studentId?.email}</a>
+                          {r.studentId?.department ? ` · ${r.studentId.department}` : ''}
+                          {r.studentId?.semester ? ` · Semester ${r.studentId.semester}` : ''}
+                          {r.createdAt ? ` · ${new Date(r.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}` : ''}
+                        </div>
+                      </div>
+
+                      <div className="clubs-requests__actions">
+                        <button type="button" className="ui-btn ui-btn--sm" onClick={() => handleApprove(r._id)}>
+                          <CheckIcon />
+                          Approve
+                        </button>
+                        <button type="button" className="ui-btn ui-btn--ghost ui-btn--sm clubs-requests__reject" onClick={() => handleReject(r._id)}>
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="clubs-admin__empty">
+                  <CheckIcon />
+                  <span>No requests waiting.</span>
+                </div>
+              )}
+            </div>
+
+            <div className="ui-modal__foot">
+              <button type="button" className="ui-btn ui-btn--ghost" onClick={() => setModal(null)}>
+                Close
               </button>
-            )}
-            <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={() => setModal('member')}>
-              <UserPlusIcon />
-              Add member
-            </button>
-            {user?.role === 'club_admin' && (
-              <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={() => setModal('coordinator')}>
-                <BadgeIcon />
-                Assign coordinator
-              </button>
-            )}
-            <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={() => setModal('images')}>
-              <ImageIcon />
-              Club images
-            </button>
+            </div>
           </div>
-          <p className="clubs-admin__note clubs-admin__actions-note">
-            Members you add are active immediately. Students who ask to join wait in the queue above.
-          </p>
         </div>
-      </section>
+      )}
 
       {modal === 'edit' && (
         <div className="ui-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setModal(null); }}>
@@ -365,7 +385,6 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
             <div className="ui-modal__head">
               <div>
                 <h2 id="clubs-edit-title" className="ui-panel__title">Edit club details</h2>
-                <p className="ui-hint clubs-modal__sub">Shown on the directory and on this page.</p>
               </div>
               <button type="button" className="ui-icon-btn" onClick={() => setModal(null)} aria-label="Close">
                 <CloseIcon />
@@ -417,7 +436,6 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
             <div className="ui-modal__head">
               <div>
                 <h2 id="clubs-member-title" className="ui-panel__title">Add member</h2>
-                <p className="ui-hint clubs-modal__sub">Add a registered student directly, without a join request.</p>
               </div>
               <button type="button" className="ui-icon-btn" onClick={() => setModal(null)} aria-label="Close">
                 <CloseIcon />
@@ -487,7 +505,6 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
             <div className="ui-modal__head">
               <div>
                 <h2 id="clubs-coordinator-title" className="ui-panel__title">Faculty coordinator</h2>
-                <p className="ui-hint clubs-modal__sub">The coordinator reviews join requests and supports the club.</p>
               </div>
               <button type="button" className="ui-icon-btn" onClick={() => setModal(null)} aria-label="Close">
                 <CloseIcon />
@@ -501,11 +518,9 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
                       ? (typeof club.facultyCoordinatorId === 'object' ? club.facultyCoordinatorId.name : club.facultyCoordinatorId)
                       : 'No coordinator assigned'}
                   </p>
-                  <p className="clubs-upload__hint">
-                    {typeof club.facultyCoordinatorId === 'object' && club.facultyCoordinatorId?.email
-                      ? club.facultyCoordinatorId.email
-                      : 'Clubs without a coordinator have no reviewer for join requests.'}
-                  </p>
+                  {typeof club.facultyCoordinatorId === 'object' && club.facultyCoordinatorId?.email ? (
+                    <p className="clubs-upload__hint">{club.facultyCoordinatorId.email}</p>
+                  ) : null}
                 </div>
                 <span className={`ui-tag ${club.facultyCoordinatorId ? 'is-positive' : 'is-warning'}`}>
                   {club.facultyCoordinatorId ? 'Assigned' : 'Unassigned'}
@@ -548,7 +563,6 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
             <div className="ui-modal__head">
               <div>
                 <h2 id="clubs-images-title" className="ui-panel__title">Club images</h2>
-                <p className="ui-hint clubs-modal__sub">A square logo for the directory, a wide cover for the club page.</p>
               </div>
               <button type="button" className="ui-icon-btn" onClick={() => setModal(null)} aria-label="Close">
                 <CloseIcon />
@@ -559,7 +573,7 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
               <div className="clubs-upload">
                 <div className="clubs-upload__text">
                   <p className="clubs-upload__title">Logo</p>
-                  <p className="clubs-upload__hint">Square image, at least 400px. Appears beside the club name.</p>
+                  <p className="clubs-upload__hint">Square, 400 px or larger.</p>
                 </div>
                 <button type="button" className="ui-btn ui-btn--sm" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
                   {uploading ? 'Uploading…' : 'Choose logo'}
@@ -570,7 +584,7 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
               <div className="clubs-upload">
                 <div className="clubs-upload__text">
                   <p className="clubs-upload__title">Cover image</p>
-                  <p className="clubs-upload__hint">Wide image, around 1600×400. Sits at the top of the club page.</p>
+                  <p className="clubs-upload__hint">Wide, around 1600 × 400 px.</p>
                 </div>
                 <button type="button" className="ui-btn ui-btn--sm" disabled={uploadingCover} onClick={() => coverImageInputRef.current?.click()}>
                   {uploadingCover ? 'Uploading…' : 'Choose cover'}
@@ -585,6 +599,6 @@ export function ClubManagement({ club, onUpdate }: { club: any, onUpdate: () => 
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

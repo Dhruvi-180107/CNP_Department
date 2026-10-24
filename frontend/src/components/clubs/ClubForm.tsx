@@ -44,9 +44,6 @@ export function ClubForm({ onSave, onCancel }: { onSave: () => void, onCancel: (
         <div className="ui-modal__head">
           <div>
             <h2 id="clubs-create-title" className="ui-panel__title">New club</h2>
-            <p className="ui-hint clubs-modal__sub">
-              The club appears in the directory immediately. You can add a logo and members afterwards.
-            </p>
           </div>
           <button type="button" className="ui-icon-btn" onClick={onCancel} disabled={saving} aria-label="Close">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -86,7 +83,6 @@ export function ClubForm({ onSave, onCancel }: { onSave: () => void, onCancel: (
                 rows={4}
                 disabled={saving}
               />
-              <p className="ui-hint">One or two sentences. This is the line students read in the directory.</p>
             </div>
           </div>
 

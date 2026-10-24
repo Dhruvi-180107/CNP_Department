@@ -3,11 +3,10 @@ import type { User } from '../../types';
 import { useStudentDashboardData } from '../../hooks/useStudentDashboardData';
 import { DashboardSkeleton } from '../../components/dashboard/student/DashboardSkeleton';
 import { StudentDashboardHeader } from '../../components/dashboard/student/StudentDashboardHeader';
+import { StudentTermStrip } from '../../components/dashboard/student/StudentTermStrip';
 import { StudentMemberships } from '../../components/dashboard/student/StudentMemberships';
-import { StudentNotificationSummary } from '../../components/dashboard/student/StudentNotificationSummary';
 import { StudentOverview, countPendingRequests } from '../../components/dashboard/student/StudentOverview';
 import { StudentProjects } from '../../components/dashboard/student/StudentProjects';
-import { StudentRequests } from '../../components/dashboard/student/StudentRequests';
 import { StudentUpcomingEvents } from '../../components/dashboard/student/StudentUpcomingEvents';
 import {
   asEvent,
@@ -22,6 +21,15 @@ interface StudentDashboardPageProps {
   user: User;
 }
 
+/**
+ * Student dashboard — "your term".
+ *
+ * The page answers what the term looks like before it answers what is on a list:
+ * a six-week strip with the real events on it, the next event as a ticket, clubs
+ * as crests with a composition bar, projects as status rails, and the inbox as a
+ * signal strip. Regions are open — one rule, one label — and the ticket is the
+ * only framed object on the page.
+ */
 export function StudentDashboardPage({ user }: StudentDashboardPageProps) {
   const navigate = useNavigate();
   const data = useStudentDashboardData(user);
@@ -32,8 +40,9 @@ export function StudentDashboardPage({ user }: StudentDashboardPageProps) {
     data.upcomingEvents.map(asEvent).filter((event): event is StudentEvent => event !== null)
   );
   const nextEvent = events[0] ?? null;
-  // MOCK: derived counts — no summary endpoint returns "days to the next event",
-  // core-team seats, team leads or pending projects. See docs/mocks/student-dashboard.md
+  // Derived here on purpose: `GET /dashboard/summary` also returns `daysUntil` and
+  // `eventsAhead`, but the term strip already holds the event list, so the same
+  // numbers fall out of it without a second request.
   const nextEventInDays = nextEvent?.eventDate ? calendarDaysUntil(nextEvent.eventDate) : null;
 
   const coreTeamCount = data.clubs.filter(({ membership }) => membership.membershipType === 'core_team').length;
@@ -60,19 +69,9 @@ export function StudentDashboardPage({ user }: StudentDashboardPageProps) {
         user={user}
         nextEventInDays={data.errors.events ? null : nextEventInDays}
         upcomingCount={data.errors.events ? null : events.length}
+        nextEventTitle={data.errors.events ? null : nextEvent?.title ?? null}
         onExploreClubs={() => navigate('/clubs')}
         onExploreProjects={() => navigate('/projects')}
-      />
-
-      <StudentOverview
-        clubCount={data.errors.clubs ? null : data.clubs.length}
-        projectCount={data.errors.projects ? null : data.projects.length}
-        upcomingEventCount={data.errors.events ? null : events.length}
-        unreadNotifications={data.errors.notifications ? null : data.unreadCount}
-        pendingRequestCount={data.errors.requests ? null : pendingRequests}
-        coreTeamCount={coreTeamCount}
-        teamLeadCount={teamLeadCount}
-        nextEventInDays={nextEventInDays}
       />
 
       {firstError ? (
@@ -85,24 +84,34 @@ export function StudentDashboardPage({ user }: StudentDashboardPageProps) {
       ) : null}
 
       <div className="sd-compose">
-        <StudentUpcomingEvents events={data.upcomingEvents} error={data.errors.events} />
+        {data.errors.events ? null : (
+          <StudentTermStrip events={events} error={data.errors.events} />
+        )}
 
-        <StudentNotificationSummary
-          unreadCount={data.unreadCount}
-          notifications={data.notifications}
-          error={data.errors.notifications}
+        <StudentUpcomingEvents events={events} error={data.errors.events} />
+
+        <StudentMemberships
+          clubs={data.clubs}
+          error={data.errors.clubs}
+          coreCount={data.errors.clubs ? 0 : coreTeamCount}
         />
-
-        <StudentMemberships clubs={data.clubs} error={data.errors.clubs} />
 
         <StudentProjects
           projects={data.projects}
           currentUserId={user._id}
           pendingProjectIds={pendingProjectIds}
           error={data.errors.projects}
+          leadCount={data.errors.projects ? 0 : teamLeadCount}
         />
 
-        <StudentRequests requests={data.joinRequests} error={data.errors.requests} />
+        <StudentOverview
+          requests={data.joinRequests}
+          notifications={data.notifications}
+          unreadCount={data.unreadCount}
+          pendingCount={pendingRequests}
+          requestsError={data.errors.requests}
+          notificationsError={data.errors.notifications}
+        />
       </div>
     </div>
   );

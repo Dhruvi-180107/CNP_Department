@@ -56,7 +56,6 @@ export function ProjectForm({ onSave, onCancel }: { onSave: () => void; onCancel
             <h2 className="ui-h2" id={`${fieldId}-title`}>
               New project
             </h2>
-            <p className="ui-sub">Give a GUIITAR team a name, a status and a brief.</p>
           </div>
           <button
             type="button"
@@ -129,7 +128,6 @@ export function ProjectForm({ onSave, onCancel }: { onSave: () => void; onCancel
                 placeholder="What is the team building, and what does done look like?"
                 disabled={loading}
               />
-              <p className="ui-hint">Shown on the project page and the portfolio.</p>
             </div>
           </div>
 

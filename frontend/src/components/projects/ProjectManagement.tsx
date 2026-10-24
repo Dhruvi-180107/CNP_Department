@@ -149,7 +149,6 @@ export function ProjectManagement({ project, onUpdate }: { project: any; onUpdat
                 <option value="inactive">Inactive</option>
                 <option value="completed">Completed</option>
               </select>
-              <p className="ui-hint">Completed and inactive projects move to their own group in the portfolio.</p>
             </div>
 
             <div>

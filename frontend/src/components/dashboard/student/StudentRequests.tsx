@@ -1,5 +1,8 @@
 import { Link } from 'react-router-dom';
-import { requestStatus, requestTarget, tagToneClass } from './studentUtils';
+import { KindGlyph } from '../../ui/vis';
+import { Tooltip } from '../../ui/Tooltip';
+import { CheckIcon } from './StudentIcons';
+import { relativeTime, requestStatus, requestTarget, type RequestStatus } from './studentUtils';
 import type { StudentJoinRequest } from '../../../types/studentDashboard';
 
 interface StudentRequestsProps {
@@ -7,68 +10,79 @@ interface StudentRequestsProps {
   error?: string;
 }
 
+function toneOf(status: RequestStatus['tone']): string {
+  return status === 'plain' ? 'plain' : status;
+}
+
+/**
+ * Join requests as queue marks: one mark per request, toned by its state, each
+ * linking to the club or project it concerns. Pending is the only loud state and
+ * the oldest pending age lives in the tooltip.
+ */
 export function StudentRequests({ requests, error }: StudentRequestsProps) {
   const pending = requests.filter((request) => request.status === 'pending');
-  const display = [
-    ...pending,
-    ...requests.filter((request) => request.status !== 'pending'),
-  ].slice(0, 4);
-  const hidden = requests.length - display.length;
-
-  const meta = pending.length > 0
-    ? `${pending.length} awaiting a decision`
-    : requests.length > 0
-      ? `${requests.length} on file, none pending`
-      : null;
+  const oldestPending = pending.reduce<string | undefined>((oldest, request) => {
+    if (!request.createdAt) return oldest;
+    if (!oldest) return request.createdAt;
+    return new Date(request.createdAt) < new Date(oldest) ? request.createdAt : oldest;
+  }, undefined);
+  const oldest = relativeTime(oldestPending);
 
   return (
-    <section className="sd-strip" aria-labelledby="sd-requests-heading">
-      <div className="sd-strip__lead">
-        <h2 className="sd-strip__title" id="sd-requests-heading">
-          Join requests
-        </h2>
-        {meta ? <span className="sd-strip__meta">{meta}</span> : null}
-      </div>
+    <div className="sd-signal__row">
+      <span className="sd-signal__glyph" aria-hidden="true">
+        <KindGlyph kind="request" size={16} />
+      </span>
+      <span className="sd-signal__label">Requests</span>
 
-      {error ? (
-        <p className="sd-strip__error" role="alert">
-          {error}
-        </p>
-      ) : display.length === 0 ? (
-        <p className="sd-strip__empty">
-          No requests yet. <Link className="ui-link" to="/clubs">Find a club</Link> or a project to
-          apply.
-        </p>
-      ) : (
-        <ul className="sd-strip__items">
-          {display.map((request) => {
-            const target = requestTarget(request);
-            const status = requestStatus(request.status);
-            const body = (
-              <>
-                <span className="sd-chip__kind">{target.kind}</span>
-                <span className="sd-chip__name ui-truncate">{target.name}</span>
-                <span className={tagToneClass(status.tone)}>{status.label}</span>
-              </>
-            );
-            return (
-              <li key={request._id}>
-                {target.id ? (
+      <span className="sd-signal__marks">
+        {!error
+          ? requests.slice(0, 6).map((request) => {
+              const target = requestTarget(request);
+              const status = requestStatus(request.status);
+              const label = `${target.kind} ${target.name}, ${status.label}`;
+              const mark = <span className="sd-signal__mark" data-tone={toneOf(status.tone)} />;
+
+              if (!target.id) {
+                return (
+                  <span className="sd-signal__mark-wrap" key={request._id} role="img" aria-label={label}>
+                    {mark}
+                  </span>
+                );
+              }
+              return (
+                <Tooltip key={request._id} label={`${target.kind} · ${target.name} · ${status.label}`}>
                   <Link
-                    className="sd-chip"
+                    className="sd-signal__mark-wrap"
                     to={target.kind === 'Club' ? `/clubs/${target.id}` : `/projects/${target.id}`}
+                    aria-label={label}
                   >
-                    {body}
+                    {mark}
                   </Link>
-                ) : (
-                  <span className="sd-chip">{body}</span>
-                )}
-              </li>
-            );
-          })}
-          {hidden > 0 ? <li className="sd-strip__more">+{hidden} more</li> : null}
-        </ul>
-      )}
-    </section>
+                </Tooltip>
+              );
+            })
+          : null}
+        {!error && requests.length > 6 ? (
+          <span className="sd-signal__more">+{requests.length - 6}</span>
+        ) : null}
+      </span>
+
+      <span className="sd-signal__num" aria-hidden="true">
+        {error ? (
+          <span className="sd-signal__unit">unavailable</span>
+        ) : pending.length > 0 ? (
+          <>
+            <span className="sd-signal__n">{pending.length}</span>
+            <span className="sd-signal__unit">waiting{oldest ? ` · ${oldest}` : ''}</span>
+          </>
+        ) : (
+          <>
+            <CheckIcon className="sd-signal__check" />
+            <span className="sd-signal__unit">{requests.length > 0 ? 'clear' : 'none'}</span>
+          </>
+        )}
+      </span>
+    </div>
   );
 }

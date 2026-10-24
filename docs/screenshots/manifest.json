@@ -1,0 +1,134 @@
+[
+ {
+  "name": "landing",
+  "url": "/",
+  "role": null,
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/landing.webp"
+ },
+ {
+  "name": "landing-full",
+  "url": "/",
+  "role": null,
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/landing-full.webp"
+ },
+ {
+  "name": "login",
+  "url": "/login",
+  "role": null,
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/login.webp"
+ },
+ {
+  "name": "dashboard-student",
+  "url": "/dashboard",
+  "role": "student",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/dashboard-student.webp"
+ },
+ {
+  "name": "dashboard-coordinator",
+  "url": "/dashboard",
+  "role": "coordinator",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/dashboard-coordinator.webp"
+ },
+ {
+  "name": "dashboard-club-admin",
+  "url": "/dashboard",
+  "role": "clubAdmin",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/dashboard-club-admin.webp"
+ },
+ {
+  "name": "dashboard-mentor",
+  "url": "/dashboard",
+  "role": "mentor",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/dashboard-mentor.webp"
+ },
+ {
+  "name": "dashboard-project-admin",
+  "url": "/dashboard",
+  "role": "projectAdmin",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/dashboard-project-admin.webp"
+ },
+ {
+  "name": "clubs",
+  "url": "/clubs",
+  "role": "student",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/clubs.webp"
+ },
+ {
+  "name": "club-details",
+  "url": "/clubs/6adcb38c836ec6da6cf4d2a7",
+  "role": "student",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/club-details.webp"
+ },
+ {
+  "name": "club-manage",
+  "url": "/clubs/6adcb38c836ec6da6cf4d2a7",
+  "role": "clubAdmin",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/club-manage.webp"
+ },
+ {
+  "name": "projects",
+  "url": "/projects",
+  "role": "student",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/projects.webp"
+ },
+ {
+  "name": "project-details",
+  "url": "/projects/6adcb38c836ec6da6cf4d2c1",
+  "role": "student",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/project-details.webp"
+ },
+ {
+  "name": "project-manage",
+  "url": "/projects/6adcb38c836ec6da6cf4d2c1",
+  "role": "projectAdmin",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/project-manage.webp"
+ },
+ {
+  "name": "events",
+  "url": "/events",
+  "role": "student",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/events.webp"
+ },
+ {
+  "name": "notifications",
+  "url": "/notifications",
+  "role": "student",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/notifications.webp"
+ },
+ {
+  "name": "inventory",
+  "url": "/inventory",
+  "role": "projectAdmin",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/inventory.webp"
+ },
+ {
+  "name": "material-requests",
+  "url": "/material-requests",
+  "role": "projectAdmin",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/material-requests.webp"
+ },
+ {
+  "name": "profile",
+  "url": "/profile",
+  "role": "student",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/profile.webp"
+ },
+ {
+  "name": "profile-edit",
+  "url": "/profile",
+  "role": "student",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/profile-edit.webp"
+ },
+ {
+  "name": "mobile-dashboard",
+  "url": "/dashboard",
+  "role": "student",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/mobile-dashboard.webp"
+ },
+ {
+  "name": "mobile-clubs",
+  "url": "/clubs",
+  "role": "student",
+  "file": "/Users/abhinav/Projects/CNP_Department/docs/screenshots/mobile-clubs.webp"
+ }
+]

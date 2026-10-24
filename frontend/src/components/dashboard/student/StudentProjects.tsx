@@ -1,7 +1,10 @@
+import { Fragment } from 'react';
 import { Link } from 'react-router-dom';
+import { KindGlyph } from '../../ui/vis';
+import { Tooltip } from '../../ui/Tooltip';
 import { DashboardSection, PanelError } from './DashboardSection';
-import { ArrowRightIcon, ProjectIcon } from './StudentIcons';
-import { initialsOf, projectStatus, refId, refName, tagToneClass } from './studentUtils';
+import { LeadIcon, MentorIcon, PendingIcon } from './StudentIcons';
+import { projectStage, projectStatus, refId, refName } from './studentUtils';
 import type { StudentProjectWithMentors } from '../../../types/studentDashboard';
 
 interface StudentProjectsProps {
@@ -10,6 +13,8 @@ interface StudentProjectsProps {
   /** Project ids with a join request still awaiting a decision. */
   pendingProjectIds?: Set<string>;
   error?: string;
+  /** How many of these teams you lead — derived on the page. */
+  leadCount?: number;
 }
 
 function mentorName(project: StudentProjectWithMentors): string | null {
@@ -18,17 +23,30 @@ function mentorName(project: StudentProjectWithMentors): string | null {
   return refName(primary?.mentorId);
 }
 
+/**
+ * A project is a rail: a status position on three stages, your role as a mark,
+ * the mentor and team lead one hover away. The stage is the status word placed
+ * on a fixed track — never a fabricated percentage.
+ */
 export function StudentProjects({
   projects,
   currentUserId,
   pendingProjectIds,
   error,
+  leadCount = 0,
 }: StudentProjectsProps) {
   return (
     <DashboardSection
       id="sd-projects"
-      title="Your projects"
-      meta={projects.length > 0 ? `${projects.length}` : undefined}
+      title="Projects"
+      meta={
+        projects.length > 0 ? (
+          <>
+            {projects.length}
+            {leadCount > 0 ? <span className="sd-region__note"> · {leadCount} lead</span> : null}
+          </>
+        ) : undefined
+      }
       actionLabel="All projects"
       actionTo="/projects"
       className="sd-projects"
@@ -36,59 +54,108 @@ export function StudentProjects({
       {error ? <PanelError message={error} /> : null}
 
       {projects.length > 0 ? (
-        <ul className="ui-rows sd-project-rows">
+        <ul className="sd-rails">
           {projects.map((project) => {
             const status = projectStatus(project.status);
+            const stage = projectStage(project.status);
             const leads = refId(project.teamLeaderId) === currentUserId;
+            const leader = refName(project.teamLeaderId);
             const mentor = mentorName(project);
             const pending = pendingProjectIds?.has(project._id) ?? false;
+
+            const label = [
+              project.name,
+              status ? status.label : 'status unset',
+              stage > 0 ? `stage ${stage} of 3` : null,
+              leads ? 'you are team lead' : 'you are a member',
+              !leads && leader ? `team lead ${leader}` : null,
+              mentor ? `mentor ${mentor}` : null,
+              pending ? 'join request pending' : null,
+            ]
+              .filter(Boolean)
+              .join(', ');
+
             return (
-              <li className="ui-row ui-row--link" key={project._id}>
-                <span className="ui-avatar sd-avatar" aria-hidden="true">
-                  {project.image ? <img src={project.image} alt="" /> : initialsOf(project.name)}
-                </span>
-                <div className="ui-row__main">
-                  <p className="ui-row__title">
-                    <Link className="sd-row-title" to={`/projects/${project._id}`}>
-                      {project.name}
-                    </Link>
-                  </p>
-                  <p className="ui-row__sub ui-truncate">
-                    {mentor ? `Mentor ${mentor}` : 'No mentor assigned'}
-                  </p>
-                </div>
-                <div className="ui-row__meta sd-project-rows__meta">
-                  {pending ? <span className="ui-tag is-warning">Request pending</span> : null}
-                  {status ? <span className={tagToneClass(status.tone)}>{status.label}</span> : null}
-                  <span className={leads ? 'ui-tag is-accent' : 'ui-tag ui-tag--plain'}>
-                    {leads ? 'Team lead' : 'Member'}
+              <li key={project._id}>
+                <Link className="sd-rail" to={`/projects/${project._id}`} aria-label={label}>
+                  <span className="sd-rail__name">{project.name}</span>
+
+                  <span className="sd-rail__flags" aria-hidden="true">
+                    {leads ? (
+                      <Tooltip label="Team lead — you">
+                        <span className="sd-rail__flag is-lead">
+                          <LeadIcon className="sd-icon sd-icon--xs" />
+                        </span>
+                      </Tooltip>
+                    ) : (
+                      <Tooltip label="You · member">
+                        <span className="sd-rail__flag is-member">
+                          <KindGlyph kind="member" size={15} />
+                        </span>
+                      </Tooltip>
+                    )}
+
+                    {!leads && leader ? (
+                      <Tooltip label={`Team lead · ${leader}`}>
+                        <span className="sd-rail__flag is-lead-quiet">
+                          <LeadIcon className="sd-icon sd-icon--xs" />
+                        </span>
+                      </Tooltip>
+                    ) : null}
+
+                    {mentor ? (
+                      /* The name slides out on row hover; the link's accessible
+                         name carries it for keyboard and screen readers. */
+                      <span className="sd-rail__flag is-mentor">
+                        <MentorIcon className="sd-icon sd-icon--xs" />
+                        <span className="sd-rail__inspect">{mentor}</span>
+                      </span>
+                    ) : null}
+
+                    {pending ? (
+                      <Tooltip label="Join request pending">
+                        <span className="sd-rail__flag is-warn">
+                          <PendingIcon className="sd-icon sd-icon--xs" />
+                        </span>
+                      </Tooltip>
+                    ) : null}
                   </span>
-                </div>
-                <div className="ui-row__actions" aria-hidden="true">
-                  <span className="ui-btn ui-btn--quiet ui-btn--sm">
-                    Open
-                    <ArrowRightIcon className="sd-icon sd-icon--sm" />
+
+                  <span className="sd-rail__foot">
+                    <span
+                      className="sd-steps"
+                      data-stage={stage || undefined}
+                      aria-hidden="true"
+                    >
+                      {[1, 2, 3].map((step) => (
+                        <Fragment key={step}>
+                          {step > 1 ? (
+                            <span className="sd-steps__link" data-on={step - 1 < stage || undefined} />
+                          ) : null}
+                          <span
+                            className="sd-steps__node"
+                            data-on={step <= stage || undefined}
+                            data-current={step === stage || undefined}
+                          />
+                        </Fragment>
+                      ))}
+                    </span>
+
+                    <span className="sd-rail__status">
+                      {status ? status.label : 'No status'}
+                    </span>
                   </span>
-                </div>
+                </Link>
               </li>
             );
           })}
         </ul>
       ) : !error ? (
-        <div className="sd-panel__state">
-          <div className="ui-empty sd-empty">
-            <span className="ui-empty__mark">
-              <ProjectIcon />
-            </span>
-            <p className="ui-empty__title">No project assignments yet</p>
-            <p className="ui-empty__text">
-              GUIITAR projects pair students with faculty mentors and a student team leader. Browse the
-              open projects to apply.
-            </p>
-            <Link className="ui-btn ui-btn--quiet ui-btn--sm" to="/projects">
-              View open projects
-            </Link>
-          </div>
+        <div className="sd-region__state">
+          <p className="sd-region__empty">No projects yet.</p>
+          <Link className="ui-btn ui-btn--quiet ui-btn--sm" to="/projects">
+            Browse projects
+          </Link>
         </div>
       ) : null}
     </DashboardSection>

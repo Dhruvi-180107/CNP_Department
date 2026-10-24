@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../services/api';
+import { RoleMark } from './RoleMark';
 import '../../pages/Clubs/clubs.css';
 
 function initials(name: string) {
@@ -12,6 +13,18 @@ function initials(name: string) {
     .toUpperCase();
 }
 
+const MailIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="3.5" y="5.5" width="17" height="13" rx="2" stroke="currentColor" strokeWidth="1.7" />
+    <path d="m4.5 7 7.5 6 7.5-6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+  </svg>
+);
+
+/**
+ * A member as a ruled entry: a face, a name, one meta line, a role mark, and the
+ * actions that only exist while the row is being looked at. The email is an
+ * action, not a line of text.
+ */
 export function MemberItem({ m, clubId, canManage, onRefresh }: { m: any, clubId: string, canManage: boolean, onRefresh: () => void }) {
   const [isEditing, setIsEditing] = useState(false);
   const [membershipType, setMembershipType] = useState(m.membershipType);
@@ -21,6 +34,7 @@ export function MemberItem({ m, clubId, canManage, onRefresh }: { m: any, clubId
 
   const student = m.studentId || {};
   const isCoreTeam = m.membershipType === 'core_team';
+  const shownPosition = isCoreTeam && m.position && m.position.toLowerCase() !== 'member' ? m.position : null;
 
   useEffect(() => {
     if (!confirming) return;
@@ -67,9 +81,9 @@ export function MemberItem({ m, clubId, canManage, onRefresh }: { m: any, clubId
   return (
     <div className={`clubs-member${isEditing ? ' is-editing' : ''}`}>
       {student.profileImage ? (
-        <img src={student.profileImage} alt="" className="ui-avatar" />
+        <img src={student.profileImage} alt="" className="ui-avatar clubs-member__face" />
       ) : (
-        <span className="ui-avatar" aria-hidden="true">{initials(student.name || '?')}</span>
+        <span className="ui-avatar clubs-member__face" aria-hidden="true">{initials(student.name || '?')}</span>
       )}
 
       <div className="clubs-member__id">
@@ -77,12 +91,6 @@ export function MemberItem({ m, clubId, canManage, onRefresh }: { m: any, clubId
         <div className="clubs-member__sub">
           {student.department || 'Student'}
           {student.semester ? ` · Semester ${student.semester}` : ''}
-          {student.email ? (
-            <>
-              {' · '}
-              <a href={`mailto:${student.email}`}>{student.email}</a>
-            </>
-          ) : null}
         </div>
       </div>
 
@@ -90,7 +98,8 @@ export function MemberItem({ m, clubId, canManage, onRefresh }: { m: any, clubId
         <form
           className="clubs-member__form"
           onSubmit={(e) => { e.preventDefault(); handleSave(); }}
-        >          <div className="clubs-member__form-row">
+        >
+          <div className="clubs-member__form-row">
             <label className="ui-visually-hidden" htmlFor={`member-type-${m._id}`}>Membership type</label>
             <span className="clubs-select">
               <select
@@ -141,29 +150,39 @@ export function MemberItem({ m, clubId, canManage, onRefresh }: { m: any, clubId
         </form>
       ) : (
         <>
-          {canManage && (
-            <div className="clubs-member__actions">
-              <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={() => setIsEditing(true)}>
-                Edit
-              </button>
-              <button
-                type="button"
-                className="ui-btn ui-btn--ghost ui-btn--sm clubs-member__remove"
-                onClick={() => setConfirming(true)}
-              >
-                Remove
-              </button>
-            </div>
-          )}
+          {shownPosition ? <span className="clubs-member__pos">{shownPosition}</span> : null}
 
-          <div className="clubs-member__role">
-            {isCoreTeam ? (
-              <span className="ui-tag is-accent">
-                Core team{m.position ? ` · ${m.position}` : ''}
-              </span>
-            ) : (
-              <span className="ui-tag ui-tag--plain">Member</span>
-            )}
+          <RoleMark
+            role={isCoreTeam ? 'core' : 'member'}
+            label={isCoreTeam ? (shownPosition ? `Core team · ${shownPosition}` : 'Core team') : 'Member'}
+            size={18}
+            className="clubs-member__role"
+          />
+
+          <div className="clubs-member__actions">
+            {student.email ? (
+              <a
+                className="ui-icon-btn clubs-member__mail"
+                href={`mailto:${student.email}`}
+                aria-label={`Email ${student.name || 'member'}`}
+              >
+                <MailIcon />
+              </a>
+            ) : null}
+            {canManage ? (
+              <>
+                <button type="button" className="ui-btn ui-btn--quiet ui-btn--sm" onClick={() => setIsEditing(true)}>
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--ghost ui-btn--sm clubs-member__remove"
+                  onClick={() => setConfirming(true)}
+                >
+                  Remove
+                </button>
+              </>
+            ) : null}
           </div>
         </>
       )}

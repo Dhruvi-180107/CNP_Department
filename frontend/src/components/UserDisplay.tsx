@@ -1,4 +1,7 @@
 import type { User } from '../types';
+import { KindGlyph } from './ui/vis';
+import { FieldGlyph, type FieldKind } from '../pages/Profile/icons';
+import { initialsOf, roleKind, roleLabel } from '../pages/Profile/labels';
 import '../pages/Profile/profile.css';
 
 interface UserDisplayProps {
@@ -10,28 +13,18 @@ interface UserDisplayProps {
   showEnrollmentNumber?: boolean;
 }
 
-const ROLE_LABELS: Record<string, string> = {
-  student: 'Student',
-  faculty_coordinator: 'Faculty coordinator',
-  faculty_mentor: 'Faculty mentor',
-  club_admin: 'Club admin',
-  project_admin: 'Project admin',
-};
-
-function roleLabel(role?: string) {
-  if (!role) return '';
-  return ROLE_LABELS[role] ?? role.replace(/_/g, ' ');
+interface PersonMark {
+  kind: FieldKind;
+  label: string;
+  value: string;
 }
 
-function initialsOf(name: string) {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map(part => part.charAt(0).toUpperCase())
-    .join('');
-}
-
+/**
+ * A person as two lines: name + role mark, then one run of field marks. Each
+ * mark carries its field's glyph, so "enrollment" reads the same here, on the
+ * identity plate and in the person picker. Everything is optional — a populated
+ * document that is missing a field simply renders one mark fewer.
+ */
 export function UserDisplay({
   user,
   showRole = false,
@@ -40,46 +33,65 @@ export function UserDisplay({
   showSemester = true,
   showEnrollmentNumber = true,
 }: UserDisplayProps) {
-  if (!user || !user.name) return <span>Unknown User</span>;
+  if (!user || !user.name) return <span className="prf-person__unknown">Unknown user</span>;
 
   const isStudent = user.role === 'student';
-  const shouldShowDept = showDepartment && user.department;
-  const shouldShowSem = showSemester && isStudent && user.semester;
-  const shouldShowEnr = showEnrollmentNumber && isStudent && user.enrollmentNumber;
-  const hasMeta = shouldShowEnr || shouldShowDept || shouldShowSem;
+  const marks: PersonMark[] = [];
+
+  if (showEnrollmentNumber && isStudent && user.enrollmentNumber) {
+    marks.push({ kind: 'enrollmentNumber', label: 'Enrollment number', value: String(user.enrollmentNumber) });
+  }
+  if (showDepartment && user.department) {
+    marks.push({ kind: 'department', label: 'Department', value: String(user.department) });
+  }
+  if (showSemester && isStudent && user.semester) {
+    marks.push({ kind: 'semester', label: 'Semester', value: `Sem ${user.semester}` });
+  }
+
+  const showSub = (showEmail && user.email) || marks.length > 0;
 
   return (
     <div className="ui-person prf-person">
-      <span className="ui-avatar ui-avatar--sm" aria-hidden="true">
-        {typeof user.profileImage === 'string' && user.profileImage
-          ? <img src={user.profileImage} alt="" />
-          : initialsOf(user.name)}
+      <span className="ui-avatar ui-avatar--sm prf-person__avatar" aria-hidden="true">
+        {typeof user.profileImage === 'string' && user.profileImage ? (
+          <img src={user.profileImage} alt="" />
+        ) : (
+          initialsOf(user.name)
+        )}
       </span>
 
-      <div className="ui-person__text">
-        <div className="prf-person__head">
+      <span className="ui-person__text prf-person__text">
+        <span className="prf-person__head">
           <span className="ui-person__name prf-person__name">{user.name}</span>
           {showRole && user.role && (
-            <span className="ui-tag ui-tag--plain prf-person__role">{roleLabel(user.role)}</span>
+            <span className="ui-tag ui-tag--plain prf-person__role">
+              <KindGlyph kind={roleKind(user.role)} size={11} />
+              {roleLabel(user.role)}
+            </span>
           )}
-        </div>
+        </span>
 
-        {showEmail && user.email && (
-          <a className="ui-link prf-person__email" href={`mailto:${user.email}`}>
-            {user.email}
-          </a>
+        {showSub && (
+          <span className="prf-person__sub">
+            {showEmail && user.email && (
+              <a
+                className="ui-link prf-person__mark prf-person__mark--link"
+                href={`mailto:${user.email}`}
+                title={user.email}
+              >
+                <FieldGlyph kind="email" size={12} />
+                <span className="prf-person__mark-text">{user.email}</span>
+              </a>
+            )}
+            {marks.map(mark => (
+              <span className="prf-person__mark" key={mark.kind} title={mark.label}>
+                <FieldGlyph kind={mark.kind} size={12} />
+                <span className="prf-person__mark-text">{mark.value}</span>
+              </span>
+            ))}
+          </span>
         )}
-
-        {hasMeta && (
-          <p className="ui-person__sub prf-person__meta">
-            {shouldShowEnr && <span>Enrollment: {user.enrollmentNumber}</span>}
-            {shouldShowEnr && (shouldShowDept || shouldShowSem) && <span className="prf-sep" aria-hidden="true">·</span>}
-            {shouldShowDept && <span>{user.department}</span>}
-            {shouldShowDept && shouldShowSem && <span className="prf-sep" aria-hidden="true">·</span>}
-            {shouldShowSem && <span>Semester {user.semester}</span>}
-          </p>
-        )}
-      </div>
+      </span>
     </div>
   );
 }

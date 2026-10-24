@@ -4,11 +4,11 @@ import { api } from '../../services/api';
 import { StudentDashboardPage } from './StudentDashboardPage';
 import { partitionEvents, useLocalDay } from '../../eventDate';
 import { usePageLoading } from '../../context/LoadingContext';
-import LoadingScreen from '../../components/LoadingScreen';
 import { CoordinatorDashboard } from './CoordinatorDashboard';
 import { ClubAdminDashboard } from './ClubAdminDashboard';
 import { MentorDashboard } from './MentorDashboard';
 import { ProjectAdminDashboard } from './ProjectAdminDashboard';
+import { DashSkeleton } from './StaffBits';
 import './staff-dash.css';
 
 /**
@@ -42,7 +42,7 @@ export default function Dashboard() {
   const [projectAdminMaterials, setProjectAdminMaterials] = useState<any[]>([]);
   const [projectAdminInventory, setProjectAdminInventory] = useState<any[]>([]);
 
-  const [loading, setLoading] = useState(true);
+  const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = async () => {
@@ -130,14 +130,14 @@ export default function Dashboard() {
           pendingMaterialRequests: matReqs.filter((r: any) => r.status === 'pending').length,
           inventoryItems: inventory.length
         });
-        setProjectAdminRequests(reqs.filter((r: any) => r.status === 'pending'));
+        setProjectAdminRequests(reqs);
         setUnreadNotifications(notifs.filter((n: any) => !n.isRead).length);
       }
     } catch (e: any) {
       console.error(e);
       setLoadError(e?.message || 'The dashboard could not be refreshed.');
     } finally {
-      setLoading(false);
+      setReady(true);
       setPageLoading(false);
     }
   };
@@ -148,7 +148,12 @@ export default function Dashboard() {
 
   if (user?.role === 'student') return <StudentDashboardPage user={user} />;
 
-  if (loading) return <LoadingScreen isReady={!loading} />;
+  if (!user) return null;
+
+  /* First paint is the role's own composition, not a full-screen loader. On a
+     refresh the page stays mounted and the shell's route rail carries the
+     global loading affordance. */
+  if (!ready) return <DashSkeleton role={user.role} />;
 
   const deleteEvent = async (id: string) => {
     if (!window.confirm('Are you sure you want to delete this event?')) return;
@@ -160,8 +165,6 @@ export default function Dashboard() {
       alert(err.message || 'Failed to delete event');
     }
   };
-
-  if (!user) return null;
 
   if (user.role === 'faculty_coordinator') {
     return (

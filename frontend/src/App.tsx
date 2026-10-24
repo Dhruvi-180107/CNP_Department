@@ -21,43 +21,68 @@ import Inventory from './pages/Inventory/Inventory';
 import Landing from './pages/Landing/Landing';
 import LoadingScreen from './components/LoadingScreen';
 
-function RouteTransition() {
-  const location = useLocation();
-  const previousPath = useRef(location.pathname);
-  const { isPageReady, setPageReady } = usePageLoading();
-  const [isTransitioning, setIsTransitioning] = useState(false);
+/**
+ * In-app navigation is a route swap, not a page load. The shell stays mounted;
+ * this hairline is the only global affordance. It trickles while the destination
+ * is still fetching and closes the moment the page says it is ready.
+ */
+function RouteProgress() {
+  const { pathname } = useLocation();
+  const { isPageReady } = usePageLoading();
+  const [phase, setPhase] = useState<'idle' | 'running' | 'done'>('idle');
+  const first = useRef(true);
 
   useEffect(() => {
-    if (previousPath.current === location.pathname) return;
-    previousPath.current = location.pathname;
-    
-    // Reset ready state for new route so screws 1-3 progress and screw 4 honestly waits for page data
-    setPageReady(false);
-    setIsTransitioning(true);
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    setPhase('running');
+    // Ceiling: never hold the rail open for a page that forgets to report.
+    const timer = window.setTimeout(() => {
+      setPhase((current) => (current === 'running' ? 'done' : current));
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [pathname]);
 
-    // Fallback timer: if destination page has no async fetch or finishes fast, ensure isPageReady releases
-    const fallbackTimer = window.setTimeout(() => {
-      setPageReady(true);
-    }, 1100);
+  useEffect(() => {
+    if (phase !== 'running' || !isPageReady) return;
+    const timer = window.setTimeout(() => setPhase('done'), 110);
+    return () => window.clearTimeout(timer);
+  }, [phase, isPageReady]);
 
-    return () => window.clearTimeout(fallbackTimer);
-  }, [location.pathname, setPageReady]);
-
-  if (!isTransitioning) return null;
+  useEffect(() => {
+    if (phase !== 'done') return;
+    const timer = window.setTimeout(() => setPhase('idle'), 340);
+    return () => window.clearTimeout(timer);
+  }, [phase]);
 
   return (
-    <LoadingScreen
-      isReady={isPageReady}
-      onComplete={() => setIsTransitioning(false)}
-    />
+    <div
+      className={`route-rail${phase !== 'idle' ? ' is-live' : ''}${phase === 'done' ? ' is-done' : ''}`}
+      aria-hidden="true"
+    >
+      <span className="route-rail__fill" />
+    </div>
   );
+}
+
+/** New route, new document: the scroll container goes back to the top. */
+function ScrollReset() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    const scroller = document.querySelector('.shell-content');
+    if (scroller) scroller.scrollTop = 0;
+    else window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
 }
 
 function AuthGuard() {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen isReady={!loading} />;
   if (user) {
-    return <Navigate to={isProfileComplete(user) ? "/dashboard" : "/profile"} replace />;
+    return <Navigate to={isProfileComplete(user) ? '/dashboard' : '/profile'} replace />;
   }
   return <Login />;
 }
@@ -66,7 +91,7 @@ function AuthRegisterGuard() {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen isReady={!loading} />;
   if (user) {
-    return <Navigate to={isProfileComplete(user) ? "/dashboard" : "/profile"} replace />;
+    return <Navigate to={isProfileComplete(user) ? '/dashboard' : '/profile'} replace />;
   }
   return <Register />;
 }
@@ -97,7 +122,8 @@ export default function App() {
               </Route>
             </Route>
           </Routes>
-          <RouteTransition />
+          <RouteProgress />
+          <ScrollReset />
         </BrowserRouter>
       </LoadingProvider>
     </AuthProvider>

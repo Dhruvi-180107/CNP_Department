@@ -1,9 +1,13 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { EventForm } from '../../components/events/EventForm';
+import { EventCrest } from '../../components/events/EventCrest';
 import { isEventPast, localDayStartIso, partitionEvents, useLocalDay } from '../../eventDate';
 import { usePageLoading } from '../../context/LoadingContext';
+import { Counter, DateTile, KindGlyph } from '../../components/ui/vis';
+import { Tooltip } from '../../components/ui/Tooltip';
 import './events.css';
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -22,6 +26,7 @@ function Icon({ children, className = 'evt-i' }: { children: ReactNode; classNam
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
+      focusable="false"
     >
       {children}
     </svg>
@@ -29,12 +34,6 @@ function Icon({ children, className = 'evt-i' }: { children: ReactNode; classNam
 }
 
 const MARK = {
-  calendar: (
-    <>
-      <rect x="3.5" y="5" width="17" height="15.5" rx="2" />
-      <path d="M8 3v4M16 3v4M3.5 10h17" />
-    </>
-  ),
   clock: (
     <>
       <circle cx="12" cy="12" r="8.5" />
@@ -98,6 +97,11 @@ function clubNameOf(event: any): string {
   return club?.name || 'Department Club';
 }
 
+function clubLogoOf(event: any): string | null {
+  const club = typeof event?.clubId === 'object' && event.clubId !== null ? event.clubId : null;
+  return club?.logo || null;
+}
+
 function timeLabel(date: Date | null): string {
   return date ? date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
 }
@@ -123,60 +127,407 @@ function groupByDay(events: any[]) {
   return groups;
 }
 
-/* ── One ruled event entry ───────────────────────────────────────────────── */
+/** Density steps on the glyph ramp: 1 event is light, the busiest day is deep. */
+function densityLevel(count: number, peak: number): number {
+  if (count <= 0 || peak <= 0) return 0;
+  return Math.min(4, Math.max(1, Math.ceil((count / peak) * 4)));
+}
 
-interface EntryProps {
+/* ── Instruments ─────────────────────────────────────────────────────────── */
+
+interface WeekBucket {
+  key: string;
+  start: Date;
+  count: number;
+}
+
+/**
+ * The month's rhythm as a bar set: one bar per calendar week, height by event
+ * count, hover for the week-by-week reading. Bars are a macro view of the same
+ * numbers the grid shades cell by cell.
+ */
+function WeekBars({ weeks }: { weeks: WeekBucket[] }) {
+  const peak = weeks.reduce((max, week) => Math.max(max, week.count), 0);
+  const barWidth = 9;
+  const gap = 3;
+  const height = 26;
+  const width = Math.max(8, weeks.length * (barWidth + gap) - gap);
+  const summary = `Events per week: ${weeks.map(week => week.count).join(', ')}`;
+
+  return (
+    <Tooltip
+      label={
+        <span className="evt-tipweeks">
+          {weeks.map(week => (
+            <span key={week.key} className="evt-tipweeks__row">
+              <span>{week.start.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span>
+              <span>
+                {week.count} {week.count === 1 ? 'event' : 'events'}
+              </span>
+            </span>
+          ))}
+          <span className="evt-tipweeks__note">Day shading follows the same counts.</span>
+        </span>
+      }
+    >
+      <span className="evt-weekbars" role="img" aria-label={summary}>
+        <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true" focusable="false">
+          {weeks.map((week, i) => (
+            <rect
+              key={`slot-${week.key}`}
+              className="evt-weekbars__slot"
+              x={i * (barWidth + gap)}
+              y={0}
+              width={barWidth}
+              height={height}
+              rx="1"
+            />
+          ))}
+          {weeks.map((week, i) => {
+            const barHeight =
+              week.count === 0 ? 3 : Math.max(6, Math.round((week.count / (peak || 1)) * (height - 6)));
+            return (
+              <rect
+                key={week.key}
+                className="evt-weekbars__bar"
+                data-empty={week.count === 0 || undefined}
+                x={i * (barWidth + gap)}
+                y={height - barHeight}
+                width={barWidth}
+                height={barHeight}
+                rx="1"
+              />
+            );
+          })}
+          <line
+            className="evt-weekbars__base"
+            x1="0"
+            y1={height - 0.5}
+            x2={width}
+            y2={height - 0.5}
+          />
+        </svg>
+      </span>
+    </Tooltip>
+  );
+}
+
+/**
+ * The distance between today and the event, as a rule with a scale: today
+ * pinned at its end, the event at its distance (clamped at 8 slots), the day
+ * count beside it. Past events mirror the same rule.
+ */
+function CountdownMark({ date, today }: { date: Date; today: Date }) {
+  const diff = Math.round((startOfDay(date) - startOfDay(today)) / DAY_MS);
+  const past = diff < 0;
+  const step = Math.min(8, Math.abs(diff));
+  const slot = 10;
+  const width = slot * 8;
+  const rawToday = past ? width : 0;
+  const rawEvent = past ? width - step * slot : step * slot;
+  // Keep both strokes inside the viewBox so an edge day still shows its mark.
+  const todayX = Math.min(Math.max(rawToday, 0.75), width - 0.75);
+  const eventX = Math.min(Math.max(rawEvent, 1.5), width - 1.5);
+  const label = relativeDay(date, today);
+
+  return (
+    <Tooltip
+      label={`${label} · ${date.toLocaleDateString(undefined, {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      })}`}
+    >
+      <span className={`evt-count${past ? ' is-past' : ''}`} role="img" aria-label={label}>
+        <svg
+          className="evt-count__rule"
+          width={width}
+          height={14}
+          viewBox={`0 0 ${width} 14`}
+          aria-hidden="true"
+          focusable="false"
+        >
+          <line className="evt-count__base" x1="0" y1="13" x2={width} y2="13" />
+          {Array.from({ length: 9 }).map((_, i) => (
+            <line
+              key={i}
+              className="evt-count__tick"
+              x1={i * slot}
+              y1={i === 0 || i === 8 ? 8 : 10}
+              x2={i * slot}
+              y2="13"
+            />
+          ))}
+          <line className="evt-count__now" x1={todayX} y1="4" x2={todayX} y2="13" />
+          <line className="evt-count__event" x1={eventX} y1="2" x2={eventX} y2="13" />
+        </svg>
+        <span className="evt-count__num" aria-hidden="true">
+          {diff === 0 ? 'Today' : `${Math.abs(diff)}d`}
+        </span>
+      </span>
+    </Tooltip>
+  );
+}
+
+/* ── One event as a ticket ───────────────────────────────────────────────── */
+
+interface TicketProps {
   event: any;
   canManage: boolean;
   onOpen: (event: any, trigger: HTMLElement) => void;
   onEdit: (event: any, trigger: HTMLElement) => void;
-  agenda?: boolean;
 }
 
-function EventEntry({ event, canManage, onOpen, onEdit, agenda = false }: EntryProps) {
+function EventTicket({ event, canManage, onOpen, onEdit }: TicketProps) {
   const date = eventDate(event);
   const past = isEventPast(event.eventDate || event.date);
+  const club = clubNameOf(event);
+  const clock = timeLabel(date);
 
   return (
-    <li className="evt-entry">
-      <button
-        type="button"
-        className={`evt-entry__open${agenda ? ' evt-entry__open--agenda' : ''}`}
-        onClick={e => onOpen(event, e.currentTarget)}
-      >
-        <span className="evt-entry__time">{timeLabel(date) || 'TBD'}</span>
-        <span className="evt-entry__body">
-          <span className="evt-entry__title">{event.title}</span>
-          <span className="evt-entry__meta">
-            <span className="evt-entry__meta-place">
-              <span>{clubNameOf(event)}</span>
-              {event.location && <span className="evt-dot" aria-hidden="true" />}
-              {event.location && <span>{event.location}</span>}
+    <li className={`evt-ticket${past ? ' is-past' : ''}`}>
+      <span className="evt-ticket__time" aria-hidden="true">
+        {clock || 'TBD'}
+      </span>
+
+      <div className="evt-ticket__body">
+        <button
+          type="button"
+          className="evt-ticket__open"
+          aria-label={`${event.title}, ${club}${clock ? `, ${clock}` : ''}${event.location ? `, ${event.location}` : ''}${past ? ', past' : ''}`}
+          onClick={e => onOpen(event, e.currentTarget)}
+        >
+          <EventCrest name={club} logo={clubLogoOf(event)} size={22} />
+          <span className="evt-ticket__main">
+            <span className="evt-ticket__title" title={event.title}>
+              {event.title}
             </span>
-            {past && !agenda && <span className="evt-entry__past">Past</span>}
+            <span className="evt-ticket__meta">
+              {event.location && (
+                <span className="evt-ticket__venue">
+                  <Icon className="evt-i evt-i--xs">{MARK.pin}</Icon>
+                  <span className="ui-truncate">{event.location}</span>
+                </span>
+              )}
+              <span className="evt-ticket__club ui-truncate">{club}</span>
+            </span>
           </span>
-        </span>
-        {agenda && <span className="evt-entry__club ui-truncate">{clubNameOf(event)}</span>}
-        {agenda && event.location && (
-          <span className="evt-entry__venue ui-truncate">{event.location}</span>
+          <span className="evt-ticket__who ui-truncate">{club}</span>
+          {past && <span className="evt-ticket__flag">Past</span>}
+          <span className="evt-ticket__go" aria-hidden="true">
+            <Icon className="evt-i evt-i--sm">{MARK.arrow}</Icon>
+          </span>
+        </button>
+
+        {canManage && (
+          <div className="evt-ticket__actions">
+            <button
+              type="button"
+              className="ui-icon-btn"
+              aria-label={`Edit ${event.title}`}
+              onClick={e => onEdit(event, e.currentTarget)}
+            >
+              <Icon className="evt-i evt-i--sm">{MARK.edit}</Icon>
+            </button>
+          </div>
         )}
-        <span className="evt-entry__go" aria-hidden="true">
-          <Icon className="evt-i evt-i--sm">{MARK.arrow}</Icon>
+      </div>
+    </li>
+  );
+}
+
+function TicketList({ events, canManage, onOpen, onEdit }: {
+  events: any[];
+  canManage: (event: any) => boolean;
+  onOpen: (event: any, trigger: HTMLElement) => void;
+  onEdit: (event: any, trigger: HTMLElement) => void;
+}) {
+  return (
+    <ul className="evt-timeline">
+      {events.map(event => (
+        <EventTicket
+          key={event._id}
+          event={event}
+          canManage={canManage(event)}
+          onOpen={onOpen}
+          onEdit={onEdit}
+        />
+      ))}
+    </ul>
+  );
+}
+
+/** A day on the rail: its plate, its distance from today, its depth. */
+function DayNodeHead({
+  date,
+  count,
+  today,
+  isToday,
+}: {
+  date: Date | null;
+  count: number;
+  today: Date;
+  isToday: boolean;
+}) {
+  return (
+    <header className="evt-daynode">
+      <div className="evt-daynode__plate">
+        {date ? (
+          <DateTile date={date} size="sm" tone={isToday ? 'accent' : 'plain'} />
+        ) : (
+          <span className="evt-daynode__tbd">TBD</span>
+        )}
+        {date && <span className="evt-daynode__rel">{relativeDay(date, today)}</span>}
+        <span className="evt-daynode__count">
+          <Counter value={count} />
         </span>
-      </button>
-      {canManage && (
-        <div className="evt-entry__actions">
+      </div>
+    </header>
+  );
+}
+
+/* ── One day of the month surface ────────────────────────────────────────── */
+
+interface DayCellProps {
+  date: Date;
+  events: any[];
+  level: number;
+  isToday: boolean;
+  isSelected: boolean;
+  onSelect: (date: Date) => void;
+  onOpen: (event: any, trigger: HTMLElement) => void;
+}
+
+function DayCell({ date, events, level, isToday, isSelected, onSelect, onOpen }: DayCellProps) {
+  const shown = events.slice(0, 2);
+  const extra = events.length - shown.length;
+  const label = `${date.toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  })}, ${events.length} ${events.length === 1 ? 'event' : 'events'}`;
+
+  return (
+    <div
+      className={`evt-cell${isToday ? ' is-today' : ''}${isSelected ? ' is-selected' : ''}`}
+      data-level={level || undefined}
+    >
+      <div className="evt-cell__head">
+        <button
+          type="button"
+          className="evt-cell__num"
+          aria-pressed={isSelected}
+          aria-label={label}
+          onClick={() => onSelect(date)}
+        >
+          {date.getDate()}
+        </button>
+        {events.length > 0 && (
+          <span className="evt-cell__n" aria-hidden="true">
+            {events.length}
+          </span>
+        )}
+      </div>
+
+      <div className="evt-cell__chips">
+        {shown.map(event => {
+          const past = isEventPast(event.eventDate || event.date);
+          const when = timeLabel(eventDate(event));
+          return (
+            <Tooltip
+              key={event._id}
+              label={[when, clubNameOf(event), event.location].filter(Boolean).join(' · ')}
+            >
+              <button
+                type="button"
+                className={`evt-chip${past ? ' is-past' : ''}`}
+                aria-label={`${event.title}, ${clubNameOf(event)}${when ? `, ${when}` : ''}${past ? ', past' : ''}`}
+                onClick={e => onOpen(event, e.currentTarget)}
+              >
+                <span className="evt-chip__title">{event.title}</span>
+              </button>
+            </Tooltip>
+          );
+        })}
+
+        {extra > 0 && (
           <button
             type="button"
-            className="ui-icon-btn"
-            aria-label={`Edit ${event.title}`}
-            onClick={e => onEdit(event, e.currentTarget)}
+            className="evt-cell__more"
+            aria-label={`Show all ${events.length} events on ${date.toLocaleDateString(undefined, {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+            })}`}
+            onClick={() => onSelect(date)}
           >
-            <Icon className="evt-i evt-i--sm">{MARK.edit}</Icon>
+            +{extra} more
           </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Clubs in the month: a ranked bar per club ───────────────────────────── */
+
+interface ClubsPanelProps {
+  clubs: { id: string; name: string; count: number }[];
+  peak: number;
+  selected: string;
+  onToggle: (id: string) => void;
+}
+
+function ClubsPanel({ clubs, peak, selected, onToggle }: ClubsPanelProps) {
+  return (
+    <section className="ui-panel evt-clubs evt-rise" style={{ '--evt-i': 3 } as CSSProperties} aria-labelledby="evt-clubs-title">
+      <header className="ui-panel__head">
+        <div className="ui-panel__titles">
+          <h2 id="evt-clubs-title" className="ui-panel__title">
+            Clubs
+          </h2>
+          <span className="ui-panel__meta">{clubs.length} this month</span>
         </div>
-      )}
-    </li>
+      </header>
+      <ul className="evt-clublist">
+        {clubs.map(club => {
+          const pressed = selected === club.id;
+          const frac = peak > 0 ? club.count / peak : 0;
+          const inner = (
+            <>
+              <EventCrest name={club.name} size={22} />
+              <span className="evt-clubrow__main">
+                <span className="evt-clubrow__name">{club.name}</span>
+                <span
+                  className="evt-clubrow__bar"
+                  style={{ '--evt-f': frac } as CSSProperties}
+                  aria-hidden="true"
+                />
+              </span>
+              <span className={`ui-count${pressed ? ' ui-count--accent' : ''}`}>{club.count}</span>
+            </>
+          );
+
+          return (
+            <li key={club.id}>
+              {club.id === 'department' ? (
+                <div className="evt-clubrow">{inner}</div>
+              ) : (
+                <button
+                  type="button"
+                  className="evt-clubrow"
+                  aria-pressed={pressed}
+                  aria-label={`${club.name}, ${club.count} ${club.count === 1 ? 'event' : 'events'} this month`}
+                  onClick={() => onToggle(club.id)}
+                >
+                  {inner}
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
@@ -393,6 +744,7 @@ export default function Events() {
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
   const trailingBlank = (7 - ((firstDay + daysInMonth) % 7)) % 7;
   const monthLabel = currentMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const monthKey = `${year}-${month}`;
 
   const getEventsForDay = (day: number) => {
     return filteredEvents.filter(e => {
@@ -401,13 +753,37 @@ export default function Events() {
     });
   };
 
-  // MOCK: the month grid, its "N events" meta and the "upcoming this month" count
-  // are a client-side slice of the fetched list; no endpoint returns a month tally.
+  // MOCK: the month grid, its "N events" meta, the week bars and the "upcoming
+  // this month" count are a client-side slice of the fetched list; no endpoint
+  // returns a month tally. See docs/mocks/events.md.
   const monthEvents = filteredEvents.filter(e => {
     const d = eventDate(e);
     return d !== null && d.getFullYear() === year && d.getMonth() === month;
   });
   const upcomingThisMonth = monthEvents.filter(e => !isEventPast(e.eventDate || e.date)).length;
+
+  // MOCK: per-day counts and their density level are a client-side slice of the
+  // fetched list, scaled against the busiest day in view. See docs/mocks/events.md.
+  const density = days.map(day => {
+    const items = getEventsForDay(day);
+    return { day, items, count: items.length };
+  });
+  const dayPeak = density.reduce((max, cell) => Math.max(max, cell.count), 0);
+
+  // MOCK: week-by-week counts for the month header bar set — same client-side
+  // slice, no `/events?month=` endpoint exists yet.
+  const weekBuckets: WeekBucket[] = (() => {
+    const weekCount = Math.ceil((firstDay + daysInMonth) / 7);
+    return Array.from({ length: weekCount }, (_, w) => {
+      const start = new Date(year, month, 1 - firstDay + w * 7);
+      const end = new Date(year, month, 1 - firstDay + w * 7 + 7);
+      const count = monthEvents.filter(e => {
+        const d = eventDate(e);
+        return d !== null && d >= start && d < end;
+      }).length;
+      return { key: `${monthKey}-w${w}`, start, count };
+    });
+  })();
 
   const todayDate = new Date(today);
   const todayKey = dayKey(todayDate);
@@ -434,12 +810,14 @@ export default function Events() {
     setSelectedDate(date);
   };
 
-  /* ── Selected day / next-up panel ──────────────────────────────────────── */
+  /* ── Selected day / next-up rail ───────────────────────────────────────── */
 
-  const sideEvents = selectedDate ? selectedDayEvents : upcomingEvents.slice(0, 4);
+  const sideEvents = selectedDate ? selectedDayEvents : [];
+  const sideCount = selectedDate ? selectedDayEvents.length : upcomingEvents.length;
   const sideTitle = selectedDate
     ? selectedDate.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
     : 'Next up';
+  const selectedRelative = selectedDate ? relativeDay(selectedDate, todayDate) : '';
   const filteredClubName =
     selectedClubFilter === 'all'
       ? ''
@@ -455,15 +833,16 @@ export default function Events() {
         return d !== null && d.getFullYear() === year && d.getMonth() === month;
       })
       .forEach(e => {
-      const club = typeof e.clubId === 'object' && e.clubId !== null ? e.clubId : null;
-      const id = club?._id || 'department';
-      const name = club?.name || 'Department Club';
+        const club = typeof e.clubId === 'object' && e.clubId !== null ? e.clubId : null;
+        const id = club?._id || 'department';
+        const name = club?.name || 'Department Club';
         const row = map.get(id);
         if (row) row.count += 1;
         else map.set(id, { id, name, count: 1 });
       });
     return [...map.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   })();
+  const clubPeak = clubsThisMonth.reduce((max, club) => Math.max(max, club.count), 0);
 
   const showAllClubs = () => {
     setSelectedClubFilter('all');
@@ -481,13 +860,13 @@ export default function Events() {
             <div className="ui-skel evt-skel evt-skel--sub" />
           </div>
         </header>
-        <div className="evt-month">
+        <div className="evt-month evt-month--loading" aria-busy="true">
           <section className="ui-panel">
             <header className="ui-panel__head">
               <div className="ui-skel evt-skel evt-skel--bar" />
               <div className="ui-skel evt-skel evt-skel--bar" />
             </header>
-            <div className="evt-grid">
+            <div className="evt-grid evt-grid--loading">
               {Array.from({ length: 35 }).map((_, i) => (
                 <div key={i} className="evt-skel-cell">
                   <span className="ui-skel evt-skel--line" />
@@ -513,22 +892,79 @@ export default function Events() {
   const detailIsPast = detailEvent ? isEventPast(detailEvent.eventDate || detailEvent.date) : false;
   const detailManage = detailEvent ? canManageEvent(detailEvent) : false;
 
+  /* The rail's one empty state, shared by the selected day and Next up. */
+  const sideEmpty = (
+    <div className="evt-side__empty">
+      <span className="ui-empty__mark">
+        <KindGlyph kind="event" size={17} />
+      </span>
+      <p className="ui-empty__title">
+        {events.length === 0
+          ? 'No events yet'
+          : selectedClubFilter !== 'all'
+            ? `Nothing from ${filteredClubName}`
+            : selectedDate
+              ? 'Nothing on this day'
+              : 'Nothing upcoming'}
+      </p>
+      <p className="ui-empty__text">
+        {events.length === 0
+          ? canAddEvent
+            ? 'Publish the first event to fill the calendar.'
+            : 'Club events appear here when they are published.'
+          : selectedClubFilter !== 'all'
+            ? 'This club has no events in view.'
+            : selectedDate
+              ? nextEvent && nextEventDate
+                ? `Next: ${nextEvent.title}, ${nextEventDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}.`
+                : 'Pick another day.'
+              : 'Past events stay on the calendar.'}
+      </p>
+      {events.length === 0 && canAddEvent && (
+        <button
+          type="button"
+          className="ui-btn ui-btn--sm"
+          onClick={e => openForm(null, e.currentTarget)}
+        >
+          New event
+        </button>
+      )}
+      {events.length > 0 && selectedClubFilter !== 'all' && (
+        <button type="button" className="ui-btn ui-btn--sm" onClick={showAllClubs}>
+          Show all clubs
+        </button>
+      )}
+      {events.length > 0 && selectedClubFilter === 'all' && selectedDate && nextEventDate && (
+        <button
+          type="button"
+          className="ui-btn ui-btn--quiet ui-btn--sm"
+          onClick={() => jumpToDay(nextEventDate)}
+        >
+          Go to {nextEventDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <div className="evt-page">
       {/* Page head */}
-      <header className="ui-page-head">
+      <header className="ui-page-head evt-rise" style={{ '--evt-i': 0 } as CSSProperties}>
         <div className="ui-page-head__text">
           <h1 className="ui-title evt-page__title">Events</h1>
           <p className="evt-ledger">
-            <span>
-              <span className="evt-ledger__n">{upcomingThisMonth}</span> upcoming this month
+            <span className="evt-ledger__cell">
+              <Counter value={upcomingThisMonth} className="evt-ledger__n" />
+              <span className="evt-ledger__lab">this month</span>
             </span>
-            <span>
-              <span className="evt-ledger__n">{upcomingEvents.length}</span> upcoming in total
+            <span className="evt-ledger__cell">
+              <Counter value={upcomingEvents.length} className="evt-ledger__n" />
+              <span className="evt-ledger__lab">upcoming</span>
             </span>
             {seesPast && (
-              <span>
-                <span className="evt-ledger__n">{pastEvents.length}</span> past
+              <span className="evt-ledger__cell">
+                <Counter value={pastEvents.length} className="evt-ledger__n" />
+                <span className="evt-ledger__lab">past</span>
               </span>
             )}
           </p>
@@ -585,15 +1021,21 @@ export default function Events() {
       {view === 'month' ? (
         <div className="evt-month">
           {/* Month grid */}
-          <section className="ui-panel evt-cal" aria-labelledby="evt-cal-title">
+          <section className="ui-panel evt-cal evt-rise" style={{ '--evt-i': 1 } as CSSProperties} aria-labelledby="evt-cal-title">
             <header className="ui-panel__head evt-cal__head">
-              <div className="ui-panel__titles">
-                <h2 id="evt-cal-title" className="ui-panel__title">
-                  {monthLabel}
-                </h2>
-                <span className="ui-panel__meta">
-                  {monthEvents.length} {monthEvents.length === 1 ? 'event' : 'events'}
-                </span>
+              <div className="evt-cal__id">
+                <div className="ui-panel__titles">
+                  <h2 id="evt-cal-title" className="ui-panel__title">
+                    {monthLabel}
+                  </h2>
+                  <span className="ui-panel__meta">
+                    {monthEvents.length} {monthEvents.length === 1 ? 'event' : 'events'}
+                  </span>
+                </div>
+                <div className="evt-cal__marks">
+                  <span className="evt-cal__marks-label">per week</span>
+                  <WeekBars weeks={weekBuckets} />
+                </div>
               </div>
               <div className="evt-cal__nav">
                 <button
@@ -624,424 +1066,248 @@ export default function Events() {
                   <span key={day}>{day}</span>
                 ))}
               </div>
-              <div className="evt-grid">
+              <div className="evt-grid" key={monthKey}>
                 {Array.from({ length: firstDay }).map((_, i) => (
-                  <div key={`lead-${i}`} className="evt-day evt-day--blank" aria-hidden="true" />
+                  <div key={`lead-${i}`} className="evt-cell evt-cell--blank" aria-hidden="true" />
                 ))}
 
-                {days.map(day => {
+                {density.map(({ day, items }) => {
                   const date = new Date(year, month, day);
                   const key = dayKey(date);
-                  const dayEvents = getEventsForDay(day);
-                  const isToday = todayKey === key;
-                  const isSelected = selectedKey === key;
-                  const shown = dayEvents.slice(0, 2);
-                  const extra = dayEvents.length - shown.length;
-
                   return (
-                    <div
+                    <DayCell
                       key={key}
-                      className={`evt-day${isToday ? ' is-today' : ''}${isSelected ? ' is-selected' : ''}`}
-                    >
-                      <div className="evt-day__head">
-                        <button
-                          type="button"
-                          className="evt-day__num"
-                          aria-pressed={isSelected}
-                          aria-label={`${date.toLocaleDateString(undefined, {
-                            weekday: 'long',
-                            day: 'numeric',
-                            month: 'long',
-                          })}, ${dayEvents.length} ${dayEvents.length === 1 ? 'event' : 'events'}`}
-                          onClick={() => toggleDay(date)}
-                        >
-                          {day}
-                        </button>
-                        {extra > 0 && (
-                          <button
-                            type="button"
-                            className="evt-day__more"
-                            onClick={() => toggleDay(date)}
-                            aria-label={`Show all ${dayEvents.length} events on ${date.toLocaleDateString()}`}
-                          >
-                            +{extra}
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="evt-day__events">
-                        {shown.map(e => (
-                          <button
-                            key={e._id}
-                            type="button"
-                            className={`evt-chip${isEventPast(e.eventDate || e.date) ? ' is-past' : ''}`}
-                            title={`${e.title} · ${clubNameOf(e)}`}
-                            onClick={evt => openDetail(e, evt.currentTarget)}
-                          >
-                            {e.title}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="evt-day__dots" aria-hidden="true">
-                        {dayEvents.slice(0, 3).map(e => (
-                          <span
-                            key={e._id}
-                            className={`evt-day__dot${isEventPast(e.eventDate || e.date) ? ' is-past' : ''}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
+                      date={date}
+                      events={items}
+                      level={densityLevel(items.length, dayPeak)}
+                      isToday={todayKey === key}
+                      isSelected={selectedKey === key}
+                      onSelect={toggleDay}
+                      onOpen={openDetail}
+                    />
                   );
                 })}
 
                 {Array.from({ length: trailingBlank }).map((_, i) => (
-                  <div key={`trail-${i}`} className="evt-day evt-day--blank" aria-hidden="true" />
+                  <div key={`trail-${i}`} className="evt-cell evt-cell--blank" aria-hidden="true" />
                 ))}
               </div>
             </div>
-
-            <footer className="ui-panel__foot evt-cal__foot">
-              <span className="evt-legend">
-                <span>
-                  <span className="evt-legend__mark" aria-hidden="true" />
-                  Upcoming
-                </span>
-                {seesPast && (
-                  <span>
-                    <span className="evt-legend__mark is-past" aria-hidden="true" />
-                    Past
-                  </span>
-                )}
-              </span>
-              <span className="evt-cal__hint">Select a day for its agenda</span>
-            </footer>
           </section>
 
           {/* Selected day / next up */}
           <div className="evt-rail">
-            <aside className="ui-panel evt-side" aria-labelledby="evt-side-title">
-            <header className="ui-panel__head">
-              <div className="ui-panel__titles">
-                <h2 id="evt-side-title" className="ui-panel__title">
-                  {sideTitle}
-                </h2>
-                <span className="ui-panel__meta">
-                  {selectedDate
-                    ? `${sideEvents.length} ${sideEvents.length === 1 ? 'event' : 'events'}`
-                    : `${upcomingEvents.length} upcoming`}
-                </span>
-              </div>
-              {selectedDate && (
-                <button
-                  type="button"
-                  className="ui-icon-btn"
-                  aria-label="Clear selected day"
-                  onClick={() => setSelectedDate(null)}
-                >
-                  <Icon className="evt-i evt-i--sm">{MARK.close}</Icon>
-                </button>
-              )}
-            </header>
-
-            {sideEvents.length > 0 ? (
-              selectedDate ? (
-                <ul className="evt-list">
-                  {sideEvents.map(event => (
-                    <EventEntry
-                      key={event._id}
-                      event={event}
-                      canManage={canManageEvent(event)}
-                      onOpen={openDetail}
-                      onEdit={(evt, trigger) => openForm(evt, trigger)}
-                    />
-                  ))}
-                </ul>
-              ) : (
-                <div>
-                  {groupByDay(upcomingEvents)
-                    .slice(0, 3)
-                    .map(group => (
-                      <section key={group.key} className="evt-group">
-                        <header className="evt-group__head evt-group__head--tight">
-                          <h3 className="evt-group__date">
-                            {group.date
-                              ? group.date.toLocaleDateString(undefined, {
-                                  weekday: 'short',
-                                  day: 'numeric',
-                                  month: 'short',
-                                })
-                              : 'Date to be confirmed'}
-                          </h3>
-                          <span className="evt-group__meta">
-                            {group.items.length} {group.items.length === 1 ? 'event' : 'events'}
-                          </span>
-                        </header>
-                        <ul className="evt-list">
-                          {group.items.slice(0, 5).map(event => (
-                            <EventEntry
-                              key={event._id}
-                              event={event}
-                              canManage={canManageEvent(event)}
-                              onOpen={openDetail}
-                              onEdit={(evt, trigger) => openForm(evt, trigger)}
-                            />
-                          ))}
-                        </ul>
-                      </section>
-                    ))}
-                </div>
-              )
-            ) : (
-              <div className="evt-side__empty">
-                <span className="ui-empty__mark">
-                  <Icon>{MARK.calendar}</Icon>
-                </span>
-                <p className="ui-empty__title">
-                  {events.length === 0
-                    ? 'No events yet'
-                    : selectedClubFilter !== 'all'
-                      ? `Nothing from ${filteredClubName}`
-                      : selectedDate
-                        ? 'Nothing on this day'
-                        : 'Nothing upcoming'}
-                </p>
-                <p className="ui-empty__text">
-                  {events.length === 0
-                    ? canAddEvent
-                      ? 'The calendar is empty. Create the first event for a club.'
-                      : 'Club events appear here as soon as they are published.'
-                    : selectedClubFilter !== 'all'
-                      ? 'This club has no events in the selected period.'
-                      : selectedDate
-                        ? nextEvent && nextEventDate
-                          ? `The next event is ${nextEvent.title} on ${nextEventDate.toLocaleDateString(undefined, { day: 'numeric', month: 'long' })}.`
-                          : 'Pick another day, or switch to the agenda for the full list.'
-                        : 'No upcoming events are scheduled. Past events stay on the calendar.'}
-                </p>
-                {events.length === 0 && canAddEvent && (
-                  <button
-                    type="button"
-                    className="ui-btn ui-btn--sm"
-                    onClick={e => openForm(null, e.currentTarget)}
-                  >
-                    New event
-                  </button>
-                )}
-                {events.length > 0 && selectedClubFilter !== 'all' && (
-                  <button type="button" className="ui-btn ui-btn--sm" onClick={showAllClubs}>
-                    Show all clubs
-                  </button>
-                )}
-                {events.length > 0 && selectedClubFilter === 'all' && selectedDate && nextEventDate && (
-                  <button
-                    type="button"
-                    className="ui-btn ui-btn--quiet ui-btn--sm"
-                    onClick={() => jumpToDay(nextEventDate)}
-                  >
-                    Go to {nextEventDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
-                  </button>
-                )}
-              </div>
-            )}
-            </aside>
-
-            {clubsThisMonth.length > 0 && (
-              <section className="ui-panel evt-clubs" aria-labelledby="evt-clubs-title">
-                <header className="ui-panel__head">
-                  <div className="ui-panel__titles">
-                    <h2 id="evt-clubs-title" className="ui-panel__title">
-                      Clubs
-                    </h2>
-                    <span className="ui-panel__meta">
-                      {clubsThisMonth.length} this month
-                    </span>
-                  </div>
-                </header>
-                <ul className="evt-clublist">
-                  {clubsThisMonth.map(club => {
-                    const pressed = selectedClubFilter === club.id;
-                    return (
-                      <li key={club.id}>
-                        {club.id === 'department' ? (
-                          <div className="evt-clubrow">
-                            <span className="evt-clubrow__name">{club.name}</span>
-                            <span className="ui-count">{club.count}</span>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            className="evt-clubrow"
-                            aria-pressed={pressed}
-                            onClick={() =>
-                              setSelectedClubFilter(prev => (prev === club.id ? 'all' : club.id))
-                            }
-                          >
-                            <span className="evt-clubrow__name">{club.name}</span>
-                            <span className={`ui-count${pressed ? ' ui-count--accent' : ''}`}>
-                              {club.count}
-                            </span>
-                          </button>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            )}
-          </div>
-        </div>
-      ) : (
-        <div className="evt-agenda">
-          <section className="ui-panel" aria-labelledby="evt-agenda-title">
-            <header className="ui-panel__head">
-              <div className="ui-panel__titles">
-                <h2 id="evt-agenda-title" className="ui-panel__title">
-                  Upcoming
-                </h2>
-                <span className="ui-panel__meta">
-                  {upcomingEvents.length} {upcomingEvents.length === 1 ? 'event' : 'events'}
-                </span>
-              </div>
-            </header>
-
-            {upcomingEvents.length > 0 ? (
-              <div className="ui-panel__body--flush">
-                {groupByDay(upcomingEvents).map(group => {
-                  const relative = group.date ? relativeDay(group.date, todayDate) : '';
-                  const label = group.date
-                    ? ['Today', 'Tomorrow', 'Yesterday'].includes(relative)
-                      ? `${relative} · ${group.date.toLocaleDateString(undefined, {
-                          weekday: 'long',
-                          day: 'numeric',
-                          month: 'long',
-                        })}`
-                      : group.date.toLocaleDateString(undefined, {
-                          weekday: 'long',
-                          day: 'numeric',
-                          month: 'long',
-                          year: 'numeric',
-                        })
-                    : 'Date to be confirmed';
-
-                  return (
-                    <section key={group.key} className="evt-group">
-                      <header className="evt-group__head">
-                        <h3 className="evt-group__date">{label}</h3>
-                        <span className="evt-group__meta">
-                          {group.items.length} {group.items.length === 1 ? 'event' : 'events'}
-                        </span>
-                      </header>
-                      <ul className="evt-list">
-                        {group.items.map(event => (
-                          <EventEntry
-                            key={event._id}
-                            event={event}
-                            canManage={canManageEvent(event)}
-                            onOpen={openDetail}
-                            onEdit={(evt, trigger) => openForm(evt, trigger)}
-                            agenda
-                          />
-                        ))}
-                      </ul>
-                    </section>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="ui-panel__body">
-                <div className="ui-empty">
-                  <span className="ui-empty__mark">
-                    <Icon>{MARK.calendar}</Icon>
+            <aside className="ui-panel evt-side evt-rise" style={{ '--evt-i': 2 } as CSSProperties} aria-labelledby="evt-side-title">
+              <header className="ui-panel__head">
+                <div className="ui-panel__titles">
+                  <h2 id="evt-side-title" className="ui-panel__title">
+                    {sideTitle}
+                  </h2>
+                  <span className="ui-panel__meta">
+                    <Counter value={sideCount} />{' '}
+                    {selectedDate ? (sideCount === 1 ? 'event' : 'events') : 'upcoming'}
                   </span>
-                  <p className="ui-empty__title">
-                    {selectedClubFilter !== 'all' ? `No upcoming events from ${filteredClubName}` : 'No upcoming events'}
-                  </p>
-                  <p className="ui-empty__text">
-                    {selectedClubFilter !== 'all'
-                      ? 'Change the club filter to see the rest of the calendar.'
-                      : 'Past events stay on the calendar. Switch to Month to browse them.'}
-                  </p>
-                  {selectedClubFilter !== 'all' && (
-                    <button type="button" className="ui-btn ui-btn--sm" onClick={showAllClubs}>
-                      Show all clubs
+                </div>
+                <div className="evt-side__marks">
+                  {selectedDate && selectedRelative && (
+                    <span className="evt-side__rel">{selectedRelative}</span>
+                  )}
+                  {selectedDate && (
+                    <button
+                      type="button"
+                      className="ui-icon-btn"
+                      aria-label="Clear selected day"
+                      onClick={() => setSelectedDate(null)}
+                    >
+                      <Icon className="evt-i evt-i--sm">{MARK.close}</Icon>
                     </button>
                   )}
                 </div>
-              </div>
-            )}
-          </section>
+              </header>
 
-          {seesPast && pastEvents.length > 0 && (
-            <details className="evt-past">
-              <summary>
-                <Icon className="evt-i evt-i--sm evt-past__chev">{MARK.down}</Icon>
-                <span className="evt-past__label">Past events</span>
-                <span className="ui-count">{pastEvents.length}</span>
-              </summary>
-              <div className="evt-past__body">
-                {groupByDay(pastEvents).map(group => (
-                  <section key={group.key} className="evt-group">
-                    <header className="evt-group__head">
-                      <h3 className="evt-group__date">
-                        {group.date
-                          ? group.date.toLocaleDateString(undefined, {
-                              weekday: 'long',
-                              day: 'numeric',
-                              month: 'long',
-                              year: 'numeric',
-                            })
-                          : 'Date to be confirmed'}
-                      </h3>
-                      <span className="evt-group__meta">
-                        {group.items.length} {group.items.length === 1 ? 'event' : 'events'}
-                      </span>
-                    </header>
-                    <ul className="evt-list">
-                      {group.items.map(event => (
-                        <EventEntry
-                          key={event._id}
-                          event={event}
-                          canManage={canManageEvent(event)}
+              <div className="evt-side__body" key={selectedKey ?? 'next'}>
+                {selectedDate ? (
+                  sideEvents.length > 0 ? (
+                    <TicketList
+                      events={sideEvents}
+                      canManage={canManageEvent}
+                      onOpen={openDetail}
+                      onEdit={(evt, trigger) => openForm(evt, trigger)}
+                    />
+                  ) : (
+                    sideEmpty
+                  )
+                ) : upcomingEvents.length > 0 ? (
+                  groupByDay(upcomingEvents)
+                    .slice(0, 3)
+                    .map(group => (
+                      <section key={group.key} className="evt-daygroup">
+                        <DayNodeHead
+                          date={group.date}
+                          count={group.items.length}
+                          today={todayDate}
+                          isToday={Boolean(group.date && dayKey(group.date) === todayKey)}
+                        />
+                        <TicketList
+                          events={group.items.slice(0, 5)}
+                          canManage={canManageEvent}
                           onOpen={openDetail}
                           onEdit={(evt, trigger) => openForm(evt, trigger)}
-                          agenda
                         />
-                      ))}
-                    </ul>
-                  </section>
-                ))}
+                      </section>
+                    ))
+                ) : (
+                  sideEmpty
+                )}
               </div>
-            </details>
+            </aside>
+          </div>
+
+          {clubsThisMonth.length > 0 && (
+            <ClubsPanel
+              clubs={clubsThisMonth}
+              peak={clubPeak}
+              selected={selectedClubFilter}
+              onToggle={id =>
+                setSelectedClubFilter(prev => (prev === id ? 'all' : id))
+              }
+            />
+          )}
+        </div>
+      ) : (
+        <div className="evt-agenda">
+          <div className="evt-agenda__main">
+            <section className="ui-panel evt-rise" style={{ '--evt-i': 1 } as CSSProperties} aria-labelledby="evt-agenda-title">
+              <header className="ui-panel__head">
+                <div className="ui-panel__titles">
+                  <h2 id="evt-agenda-title" className="ui-panel__title">
+                    Upcoming
+                  </h2>
+                  <span className="ui-panel__meta">
+                    <Counter value={upcomingEvents.length} />{' '}
+                    {upcomingEvents.length === 1 ? 'event' : 'events'}
+                  </span>
+                </div>
+              </header>
+
+              {upcomingEvents.length > 0 ? (
+                <div className="evt-agenda__body ui-panel__body--flush">
+                  {groupByDay(upcomingEvents).map(group => (
+                    <section key={group.key} className="evt-daygroup evt-daygroup--agenda">
+                      <DayNodeHead
+                        date={group.date}
+                        count={group.items.length}
+                        today={todayDate}
+                        isToday={Boolean(group.date && dayKey(group.date) === todayKey)}
+                      />
+                      <TicketList
+                        events={group.items}
+                        canManage={canManageEvent}
+                        onOpen={openDetail}
+                        onEdit={(evt, trigger) => openForm(evt, trigger)}
+                      />
+                    </section>
+                  ))}
+                </div>
+              ) : (
+                <div className="ui-panel__body">
+                  <div className="evt-empty">
+                    <span className="ui-empty__mark">
+                      <KindGlyph kind="event" size={17} />
+                    </span>
+                    <p className="ui-empty__title">
+                      {selectedClubFilter !== 'all' ? `No upcoming events from ${filteredClubName}` : 'No upcoming events'}
+                    </p>
+                    <p className="ui-empty__text">
+                      {selectedClubFilter !== 'all'
+                        ? 'Change the club filter to see the rest of the calendar.'
+                        : 'Past events stay on the calendar.'}
+                    </p>
+                    {selectedClubFilter !== 'all' && (
+                      <button type="button" className="ui-btn ui-btn--sm" onClick={showAllClubs}>
+                        Show all clubs
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {seesPast && pastEvents.length > 0 && (
+              <details className="evt-past evt-rise" style={{ '--evt-i': 3 } as CSSProperties}>
+                <summary>
+                  <Icon className="evt-i evt-i--sm evt-past__chev">{MARK.down}</Icon>
+                  <span className="evt-past__label">Past events</span>
+                  <span className="ui-count">{pastEvents.length}</span>
+                </summary>
+                <div className="evt-past__body">
+                  {groupByDay(pastEvents).map(group => (
+                    <section key={group.key} className="evt-daygroup evt-daygroup--agenda">
+                      <DayNodeHead
+                        date={group.date}
+                        count={group.items.length}
+                        today={todayDate}
+                        isToday={false}
+                      />
+                      <TicketList
+                        events={group.items}
+                        canManage={canManageEvent}
+                        onOpen={openDetail}
+                        onEdit={(evt, trigger) => openForm(evt, trigger)}
+                      />
+                    </section>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+
+          {clubsThisMonth.length > 0 && (
+            <ClubsPanel
+              clubs={clubsThisMonth}
+              peak={clubPeak}
+              selected={selectedClubFilter}
+              onToggle={id => setSelectedClubFilter(prev => (prev === id ? 'all' : id))}
+            />
           )}
         </div>
       )}
 
-      {/* Event detail */}
-      {detailEvent && (
-        <div
-          className="ui-overlay"
-          onMouseDown={e => {
-            if (e.target === e.currentTarget) closeDetail();
-          }}
-        >
+      {/* Event detail — the ticket stub */}
+      {detailEvent &&
+        createPortal(
+          <div className="evt-page evt-portal">
+            <div
+              className="ui-overlay"
+              onMouseDown={e => {
+                if (e.target === e.currentTarget) closeDetail();
+              }}
+            >
           <div
             className="ui-modal evt-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="evt-detail-title"
           >
-            <header className="ui-modal__head">
-              <div>
-                <h2 id="evt-detail-title" className="ui-h2">
-                  {detailEvent.title}
-                </h2>
-                <p className="evt-modal__sub">
-                  <span>{detailClub?.name || 'Department Club'}</span>
-                  <span className="evt-dot" aria-hidden="true" />
-                  <span className={`ui-tag${detailIsPast ? '' : ' is-positive'}`}>
-                    {detailIsPast ? 'Past' : 'Upcoming'}
-                  </span>
-                </p>
+            <header className="ui-modal__head evt-modal__head">
+              <div className="evt-modal__id">
+                <EventCrest
+                  name={detailClub?.name || 'Department Club'}
+                  logo={detailClub?.logo}
+                  size={30}
+                />
+                <div className="evt-modal__idtext">
+                  <h2 id="evt-detail-title" className="ui-h2">
+                    {detailEvent.title}
+                  </h2>
+                  <p className="evt-modal__sub">
+                    <span className="ui-truncate">{detailClub?.name || 'Department Club'}</span>
+                    <span className="evt-dot" aria-hidden="true" />
+                    <span className={`ui-tag${detailIsPast ? '' : ' is-positive'}`}>
+                      {detailIsPast ? 'Past' : 'Upcoming'}
+                    </span>
+                  </p>
+                </div>
               </div>
               <button
                 ref={closeBtnRef}
@@ -1065,99 +1331,89 @@ export default function Events() {
                 </p>
               )}
 
-              <div className="evt-detail__lead">
-                <div className="evt-dateblock evt-dateblock--lg" aria-hidden="true">
-                  <span className="evt-dateblock__m">
-                    {detailDate
-                      ? detailDate.toLocaleDateString(undefined, { month: 'short' })
-                      : 'TBD'}
+              <div className="evt-stub">
+                <div className="evt-stub__date">
+                  {detailDate ? (
+                    <DateTile date={detailDate} size="lg" tone={detailIsPast ? 'plain' : 'accent'} />
+                  ) : (
+                    <span className="evt-stub__tbd">TBD</span>
+                  )}
+                  <span className="evt-stub__time">
+                    <Icon className="evt-i evt-i--xs">{MARK.clock}</Icon>
+                    {detailDate ? timeLabel(detailDate) : 'Time TBD'}
                   </span>
-                  <span className="evt-dateblock__d">
-                    {detailDate ? detailDate.getDate() : '—'}
-                  </span>
+                  {detailDate && <CountdownMark date={detailDate} today={todayDate} />}
                 </div>
-                <div className="evt-detail__when">
-                  <p className="evt-detail__day">
-                    {detailDate
-                      ? detailDate.toLocaleDateString(undefined, {
-                          weekday: 'long',
-                          day: 'numeric',
-                          month: 'long',
-                          year: 'numeric',
-                        })
-                      : 'Date to be confirmed'}
-                  </p>
-                  <p className="evt-detail__clock">
-                    {detailDate ? timeLabel(detailDate) : 'Time to be confirmed'}
-                    {detailDate ? ` · ${relativeDay(detailDate, todayDate)}` : ''}
-                  </p>
+
+                <div className="evt-stub__body">
+                  <span className="evt-stub__notch evt-stub__notch--top" aria-hidden="true" />
+                  <span className="evt-stub__notch evt-stub__notch--bottom" aria-hidden="true" />
+
+                  <dl className="evt-facts">
+                    <div className="evt-fact">
+                      <dt>
+                        <Icon className="evt-i evt-i--xs">{MARK.pin}</Icon>
+                        Venue
+                      </dt>
+                      <dd>{detailEvent.location || 'To be confirmed'}</dd>
+                    </div>
+                    <div className="evt-fact">
+                      <dt>Organiser</dt>
+                      <dd>
+                        {detailOrganiser?.name || 'Not recorded'}
+                        {detailOrganiser?.role
+                          ? ` · ${String(detailOrganiser.role).replace(/_/g, ' ')}`
+                          : ''}
+                      </dd>
+                    </div>
+                    <div className="evt-fact">
+                      <dt>Added</dt>
+                      <dd>
+                        {detailCreated && !Number.isNaN(detailCreated.getTime())
+                          ? detailCreated.toLocaleDateString(undefined, {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric',
+                            })
+                          : 'Not recorded'}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  {detailEvent.description && (
+                    <p className="evt-detail__desc">{detailEvent.description}</p>
+                  )}
+
+                  {(detailEvent.eventLink || detailEvent.relatedDocument?.url) && (
+                    <div className="evt-detail__links">
+                      {detailEvent.eventLink && (
+                        <a
+                          className="ui-btn ui-btn--quiet ui-btn--sm"
+                          href={detailEvent.eventLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Icon className="evt-i evt-i--sm">{MARK.link}</Icon>
+                          {detailEvent.eventLinkName?.trim() || 'Event link'}
+                        </a>
+                      )}
+                      {detailEvent.relatedDocument?.url && (
+                        <a
+                          className="ui-btn ui-btn--quiet ui-btn--sm"
+                          href={detailEvent.relatedDocument.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Icon className="evt-i evt-i--sm">{MARK.file}</Icon>
+                          {detailEvent.relatedDocumentName?.trim() ||
+                            detailEvent.relatedDocument.originalName ||
+                            'Related document'}
+                        </a>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
-
-              <dl className="evt-facts">
-                <div className="evt-fact">
-                  <dt>Venue</dt>
-                  <dd>{detailEvent.location || 'To be confirmed'}</dd>
-                </div>
-                <div className="evt-fact">
-                  <dt>Club</dt>
-                  <dd>{detailClub?.name || 'Department Club'}</dd>
-                </div>
-                <div className="evt-fact">
-                  <dt>Organiser</dt>
-                  <dd>
-                    {detailOrganiser?.name || 'Not recorded'}
-                    {detailOrganiser?.role
-                      ? ` · ${String(detailOrganiser.role).replace(/_/g, ' ')}`
-                      : ''}
-                  </dd>
-                </div>
-                <div className="evt-fact">
-                  <dt>Added</dt>
-                  <dd>
-                    {detailCreated && !Number.isNaN(detailCreated.getTime())
-                      ? detailCreated.toLocaleDateString(undefined, {
-                          day: 'numeric',
-                          month: 'short',
-                          year: 'numeric',
-                        })
-                      : 'Not recorded'}
-                  </dd>
-                </div>
-              </dl>
-
-              {detailEvent.description && (
-                <p className="evt-detail__desc">{detailEvent.description}</p>
-              )}
-
-              {(detailEvent.eventLink || detailEvent.relatedDocument?.url) && (
-                <div className="evt-detail__links">
-                  {detailEvent.eventLink && (
-                    <a
-                      className="ui-btn ui-btn--quiet ui-btn--sm"
-                      href={detailEvent.eventLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Icon className="evt-i evt-i--sm">{MARK.link}</Icon>
-                      {detailEvent.eventLinkName?.trim() || 'Event link'}
-                    </a>
-                  )}
-                  {detailEvent.relatedDocument?.url && (
-                    <a
-                      className="ui-btn ui-btn--quiet ui-btn--sm"
-                      href={detailEvent.relatedDocument.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Icon className="evt-i evt-i--sm">{MARK.file}</Icon>
-                      {detailEvent.relatedDocumentName?.trim() ||
-                        detailEvent.relatedDocument.originalName ||
-                        'Related document'}
-                    </a>
-                  )}
-                </div>
-              )}
             </div>
 
             {detailManage && (
@@ -1209,17 +1465,22 @@ export default function Events() {
               </footer>
             )}
           </div>
-        </div>
-      )}
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {/* Create / edit */}
-      {showForm && canAddEvent && (
-        <div
-          className="ui-overlay"
-          onMouseDown={e => {
-            if (e.target === e.currentTarget) closeForm();
-          }}
-        >
+      {showForm &&
+        canAddEvent &&
+        createPortal(
+          <div className="evt-page evt-portal">
+            <div
+              className="ui-overlay"
+              onMouseDown={e => {
+                if (e.target === e.currentTarget) closeForm();
+              }}
+            >
           <div
             className="ui-modal ui-modal--wide evt-form-modal"
             role="dialog"
@@ -1231,11 +1492,6 @@ export default function Events() {
                 <h2 id="evt-form-title" className="ui-h2">
                   {editingEvent ? 'Edit event' : 'New event'}
                 </h2>
-                <p className="evt-modal__sub">
-                  {editingEvent
-                    ? 'Changes are visible on the club calendar as soon as you save.'
-                    : 'Publish to a club calendar. The event appears in the agenda and the month grid.'}
-                </p>
               </div>
               <button
                 type="button"
@@ -1263,8 +1519,10 @@ export default function Events() {
               onCancel={closeForm}
             />
           </div>
-        </div>
-      )}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
