@@ -106,8 +106,8 @@ function AuthRegisterGuard() {
  *
  * The public page is exempt — it needs no identity, so it paints immediately.
  */
-const BOOT_HOLD_MS = 900;
-const BOOT_LEAVE_MS = 220;
+const BOOT_HOLD_MS = 700;
+const BOOT_LEAVE_MS = 280;
 
 function BootGate({ children }: { children: ReactNode }) {
   const { loading } = useAuth();

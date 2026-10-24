@@ -824,11 +824,11 @@ legend.ui-label {
    mount. The rail, header and page head do not animate; only content does. */
 
 .route-enter {
-  animation: route-enter var(--dur-short) var(--ease-out) both;
+  animation: route-enter 240ms var(--ease-out) both;
 }
 
 @keyframes route-enter {
-  from { opacity: 0; transform: translateY(4px); }
+  from { opacity: 0; transform: translateY(3px); }
   to { opacity: 1; transform: none; }
 }
 

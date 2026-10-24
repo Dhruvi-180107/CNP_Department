@@ -98,6 +98,7 @@
 
 .rail-brand:focus-visible,
 .rail-signout:focus-visible,
+.rail-theme:focus-visible,
 .rail-close:focus-visible {
   outline: 2px solid var(--color-accent-2);
   outline-offset: 2px;
@@ -321,6 +322,77 @@
 }
 .rail-signout svg { width: 15px; height: 15px; flex: none; opacity: 0.9; }
 
+/* Appearance: a switch, not a link. Same quiet row weight as Sign out, with the
+   state carried by the knob as well as the word. */
+.rail-theme {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 100%;
+  min-height: 30px;
+  margin-inline: calc(var(--space-xs) * -1);
+  padding-inline: var(--space-xs);
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font: 500 var(--text-xs)/1 var(--font-body);
+  color: var(--color-graphite-muted);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--dur-short) var(--ease-in-out), background-color var(--dur-short) var(--ease-in-out);
+}
+.rail-theme:hover {
+  color: var(--color-graphite-ink);
+  background: color-mix(in oklab, var(--color-graphite-ink) 9%, transparent);
+}
+.rail-theme:active {
+  background: color-mix(in oklab, var(--color-graphite-ink) 15%, transparent);
+  color: var(--color-graphite-ink);
+}
+
+.rail-theme__glyph {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+.rail-theme__glyph svg { width: 15px; height: 15px; }
+
+.rail-theme__label { flex: 1; }
+
+.rail-theme__track {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  flex: none;
+  border: var(--rule-hair) solid var(--color-graphite-2);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--color-graphite-ink) 12%, transparent);
+  transition: background-color var(--dur-short) var(--ease-in-out), border-color var(--dur-short) var(--ease-in-out);
+}
+
+.rail-theme__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-graphite-ink);
+  box-shadow: 0 1px 2px oklch(0% 0 0 / 0.45);
+  transition: transform var(--dur-short) var(--ease-in-out), background-color var(--dur-short) var(--ease-in-out);
+}
+
+.rail-theme[aria-checked="true"] .rail-theme__track {
+  background: var(--color-accent);
+  border-color: var(--color-accent-2);
+}
+.rail-theme[aria-checked="true"] .rail-theme__knob {
+  transform: translateX(13px);
+  background: var(--color-accent-ink);
+}
+
 /* ── Main column ─────────────────────────────────────────────────────────── */
 
 .shell-main {
@@ -420,6 +492,9 @@
 }
 
 .hdr-crumbs a {
+  /* Without this the UA's own link colour wins, which turns the breadcrumb
+     browser-blue (and, under `color-scheme: dark`, lavender). */
+  color: var(--color-ink-2);
   padding-block: 1px;
   border-bottom: 1px solid transparent;
   transition: color var(--dur-short) var(--ease-in-out), border-color var(--dur-short) var(--ease-in-out);
@@ -958,10 +1033,16 @@
 }
 
 /* The app mounts underneath while this fades: the book leaves, the page is already there. */
+/* A keyframe, not a transition: `shell-fade` fills both ends of opacity, and an
+   animation outranks a transition, so the leaving state needs its own. */
 .shell-loader.is-leaving {
-  opacity: 0;
   pointer-events: none;
-  transition: opacity var(--dur-short) var(--ease-in-out);
+  animation: shell-fade-out 240ms var(--ease-in-out) both;
+}
+
+@keyframes shell-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 .shell-loader--inline {
@@ -989,7 +1070,7 @@
   --book-lean: 21%;
   --ease-book: cubic-bezier(0.34, 0.05, 0.24, 1);
   position: relative;
-  width: min(360px, calc(100vw - 72px));
+  width: min(340px, calc(100vw - 80px));
   perspective: 1500px;
   perspective-origin: 34% 42%;
   animation: shell-book-lean var(--dur-slow) var(--ease-book) 90ms both;
@@ -1000,8 +1081,8 @@
   position: relative;
   display: grid;
   place-items: center;
-  min-height: 216px;
-  padding: var(--space-lg) var(--space-md);
+  min-height: 284px;
+  padding: var(--space-xl) var(--space-md);
   background:
     linear-gradient(to right, color-mix(in oklch, var(--color-graphite) 7%, transparent), transparent 14%),
     var(--color-sheet);
@@ -1031,7 +1112,7 @@
   z-index: 2;
   transform-style: preserve-3d;
   transform-origin: left center;
-  animation: shell-book-open var(--dur-slow) var(--ease-book) 90ms both;
+  animation: shell-book-open 620ms var(--ease-book) 80ms both;
   will-change: transform;
 }
 
@@ -1081,7 +1162,7 @@
 }
 
 .shell-book__face--in {
-  background: var(--color-paper-2);
+  background: var(--color-paper-3);
   transform: rotateY(180deg) translateZ(0.6px);
 }
 
@@ -1094,7 +1175,7 @@
     transparent 0 21px,
     var(--color-rule-2) 21px 22px
   );
-  opacity: 0.5;
+  opacity: 0.6;
 }
 
 /* ── What is printed on the page ─────────────────────────────────────────── */
@@ -1102,10 +1183,10 @@
 .shell-loader__plate {
   display: grid;
   justify-items: center;
-  gap: var(--space-sm);
+  gap: var(--space-md);
   width: 100%;
   text-align: center;
-  animation: shell-book-print 360ms var(--ease-out) 400ms both;
+  animation: shell-book-print 300ms var(--ease-out) 300ms both;
 }
 
 .shell-book__mark {
@@ -1174,7 +1255,7 @@
   /* On a phone the cover has room for about a hand's width: nearly edge-on, so
      the spread stays inside the frame instead of being cropped by the viewport. */
   .shell-book { --book-open: -96deg; --book-lean: 4%; width: calc(100vw - 88px); }
-  .shell-book__page { min-height: 196px; }
+  .shell-book__page { min-height: 252px; padding: var(--space-lg) var(--space-sm); }
   .shell-book__frame { inset: 10px 10px 10px 18px; }
 }
 

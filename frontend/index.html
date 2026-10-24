@@ -10,9 +10,22 @@
       content="The college platform for Student Managed Clubs and GUIITAR Projects at GSFC University, Vadodara: discover clubs, projects and events, join a team, and track material requests."
     />
     <meta name="robots" content="index,follow" />
-    <meta name="color-scheme" content="light" />
-    <meta name="theme-color" content="#f8f9fc" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0f1a2e" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- The theme is a choice, stored per browser, and light is the default. -->
+    <meta name="theme-color" content="#f8f9fc" />
+    <script>
+      (() => {
+        try {
+          if (localStorage.getItem('cnp_theme') === 'dark') {
+            document.documentElement.dataset.theme = 'dark';
+            document.documentElement.style.colorScheme = 'dark';
+            document.querySelector('meta[name="theme-color"]').setAttribute('content', '#101419');
+          }
+        } catch (error) {
+          /* storage unavailable: the light default stands */
+        }
+      })();
+    </script>
     <meta name="application-name" content="CNP Department" />
 
     <!-- Icons and install -->

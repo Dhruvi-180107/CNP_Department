@@ -6,7 +6,7 @@ material requests — not markup that will be restyled next week.
 
 ```bash
 cd backend  && npm test     # 278 passed · ~23s
-cd frontend && npm test     #  97 passed ·  ~6s
+cd frontend && npm test     # 100 passed ·  ~6s
 ```
 
 | | Frontend | Backend |
@@ -15,7 +15,7 @@ cd frontend && npm test     #  97 passed ·  ~6s
 | Environment | jsdom | Node, in-memory MongoDB |
 | HTTP | `fetch` stubbed per test | Supertest against the real Express stack |
 | Database | none | `mongodb-memory-server` (a real `mongod`) |
-| Tests | 97 across 8 files | 278 across 15 files |
+| Tests | 100 across 9 files | 278 across 15 files |
 | Statements | 95.2 % | 73.4 % |
 | Lines | 98.1 % | 74.1 % |
 | Functions | 90.1 % | 83.1 % |
